@@ -6,6 +6,8 @@ import pg from 'pg';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import multer from 'multer';
+import cors from 'cors';
+import fs from 'fs';
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 const pdf = require('pdf-parse');
@@ -23,10 +25,6 @@ const JWT_SECRET = process.env.JWT_SECRET || 'facore-secret-key';
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
-if (isMockMode) {
-  console.warn('DATABASE_URL not found. Running in MOCK MODE with in-memory data.');
-}
-
 const pool = isMockMode ? null : new Pool({
   connectionString: process.env.DATABASE_URL,
 });
@@ -39,6 +37,7 @@ let mockFinancialRecords: any[] = [];
 
 async function initDb() {
   if (isMockMode) {
+    console.warn('DATABASE_URL not found. Running in MOCK MODE with in-memory data.');
     const hashedPassword = await bcrypt.hash('admin123', 10);
     mockUsers[0].password = hashedPassword;
     return;
@@ -82,10 +81,8 @@ async function initDb() {
   }
 }
 
-initDb().catch(console.error);
-
-// Facore Financial Dashboard - Production Ready
 const app = express();
+app.use(cors());
 app.use(express.json());
 
 // Logging middleware to debug 405 errors
@@ -111,6 +108,7 @@ const authenticateToken = (req: any, res: any, next: any) => {
 // API Routes
 app.post('/api/login', async (req, res) => {
   const { email, password } = req.body;
+  console.log(`Login attempt for: ${email}`);
   try {
     let user;
     if (isMockMode) {
@@ -122,11 +120,14 @@ app.post('/api/login', async (req, res) => {
 
     if (user && await bcrypt.compare(password, user.password)) {
       const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET);
+      console.log(`Login successful for: ${email}`);
       res.json({ token, user: { email: user.email, role: user.role } });
     } else {
+      console.log(`Login failed for: ${email}`);
       res.status(401).json({ error: 'Credenciales inválidas' });
     }
   } catch (err) {
+    console.error('Login error:', err);
     res.status(500).json({ error: 'Error en el servidor' });
   }
 });
@@ -228,6 +229,18 @@ app.post('/api/users', authenticateToken, async (req: any, res) => {
 });
 
 async function startServer() {
+  console.log(`Starting server in ${process.env.NODE_ENV || 'development'} mode...`);
+  
+  try {
+    await initDb();
+    console.log('Database initialized successfully');
+  } catch (err) {
+    console.error('Database initialization failed:', err);
+  }
+
+  // API routes are already defined on 'app' before this function is called.
+  // We just need to handle static files and SPA fallback.
+
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -236,15 +249,36 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
-    });
+    if (fs.existsSync(distPath)) {
+      console.log(`Serving static files from: ${distPath}`);
+      
+      // Serve static files but skip for /api routes
+      app.use((req, res, next) => {
+        if (req.url.startsWith('/api')) {
+          return next();
+        }
+        express.static(distPath)(req, res, next);
+      });
+
+      // SPA fallback
+      app.get('*', (req, res) => {
+        if (req.url.startsWith('/api')) {
+          console.warn(`API route not found: ${req.method} ${req.url}`);
+          return res.status(404).json({ error: 'API route not found' });
+        }
+        res.sendFile(path.join(distPath, 'index.html'));
+      });
+    } else {
+      console.error(`Dist directory not found at: ${distPath}. Build might have failed.`);
+      app.get('*', (req, res) => {
+        res.status(500).send('Production build not found. Please run npm run build.');
+      });
+    }
   }
 
   const PORT = Number(process.env.PORT) || 3000;
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`Server running on http://0.0.0.0:${PORT}`);
   });
 }
 
