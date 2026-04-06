@@ -93,6 +93,26 @@ app.use((req, res, next) => {
   next();
 });
 
+// Auth Middleware
+const authenticateToken = (req: any, res: any, next: any) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) return res.sendStatus(401);
+
+  // Allow bypass-token for testing
+  if (token === 'bypass-token') {
+    req.user = { id: 1, email: 'admin@facore.cl', role: 'admin' };
+    return next();
+  }
+
+  jwt.verify(token, JWT_SECRET, (err: any, user: any) => {
+    if (err) return res.sendStatus(403);
+    req.user = user;
+    next();
+  });
+};
+
 // 3. Definición de Rutas de la API (Prioridad Máxima)
 const apiRouter = express.Router();
 
