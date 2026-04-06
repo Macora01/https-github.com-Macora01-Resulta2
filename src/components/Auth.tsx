@@ -50,7 +50,7 @@ export const Auth = ({ onLogin }: { onLogin: (user: any) => void }) => {
           <div className="inline-flex items-center justify-center w-16 h-16 bg-primary rounded-2xl shadow-xl shadow-primary/20 mb-4">
             <BarChart3 className="text-white" size={32} />
           </div>
-          <h1 className="text-3xl font-bold text-primary tracking-tight">Bienvenido a Facore</h1>
+          <h1 className="text-2xl font-bold text-primary tracking-tight">Macora01\https-github.com-Macora01-Resulta2 on main</h1>
           <p className="text-text-light font-medium mt-2">Ingresa tus credenciales para acceder al dashboard</p>
         </div>
 

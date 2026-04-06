@@ -60,7 +60,7 @@ export const Layout = ({ children, onLogout, currentView, onViewChange }: {
           <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
             <BarChart3 className="text-white" size={18} />
           </div>
-          <span className="font-bold text-primary tracking-tight">Facore</span>
+          <span className="font-bold text-primary tracking-tight">Macora01\https-github.com-Macora01-Resulta2 on main</span>
         </div>
         <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="text-primary">
           {isSidebarOpen ? <X size={24} /> : <Menu size={24} />}
@@ -77,7 +77,7 @@ export const Layout = ({ children, onLogout, currentView, onViewChange }: {
             <BarChart3 className="text-white" size={24} />
           </div>
           <div className="flex flex-col">
-            <span className="font-bold text-primary text-xl leading-none">Facore</span>
+            <span className="font-bold text-primary text-sm leading-none">Macora01\https-github.com-Macora01-Resulta2 on main</span>
             <span className="text-[10px] text-text-light font-medium uppercase tracking-widest mt-1">Dashboard</span>
           </div>
         </div>

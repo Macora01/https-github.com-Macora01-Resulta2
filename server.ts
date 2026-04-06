@@ -88,6 +88,12 @@ initDb().catch(console.error);
 const app = express();
 app.use(express.json());
 
+// Logging middleware to debug 405 errors
+app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+  next();
+});
+
 // Auth Middleware
 const authenticateToken = (req: any, res: any, next: any) => {
   const authHeader = req.headers['authorization'];
