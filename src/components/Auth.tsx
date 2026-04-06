@@ -10,7 +10,7 @@ export const Auth = ({ onLogin }: { onLogin: (user: any) => void }) => {
     e.preventDefault();
     setIsLoading(true);
     try {
-      const response = await fetch('/api/login', {
+      const response = await fetch('/api/auth/session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),

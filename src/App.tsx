@@ -8,18 +8,19 @@ import { Config } from './components/Config';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
 export default function App() {
-  // Bypass login: initialize with a default admin user
-  const [user, setUser] = React.useState<any>({
-    email: 'admin@facore.cl',
-    role: 'admin'
-  });
+  const [user, setUser] = React.useState<any>(null);
   const [view, setView] = React.useState<ViewType>('dashboard');
 
-  // Check for existing session or set bypass token
+  // Check for existing session
   React.useEffect(() => {
-    // Set a dummy token for the bypass if not present
-    if (!localStorage.getItem('facore_token')) {
-      localStorage.setItem('facore_token', 'bypass-token');
+    try {
+      const savedUser = localStorage.getItem('facore_user');
+      if (savedUser) {
+        setUser(JSON.parse(savedUser));
+      }
+    } catch (err) {
+      console.error('Error parsing saved user:', err);
+      localStorage.removeItem('facore_user');
     }
   }, []);
 

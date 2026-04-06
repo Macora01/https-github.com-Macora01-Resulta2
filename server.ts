@@ -116,7 +116,7 @@ const authenticateToken = (req: any, res: any, next: any) => {
 // 3. Definición de Rutas de la API (Prioridad Máxima)
 const apiRouter = express.Router();
 
-apiRouter.post('/login', async (req, res) => {
+apiRouter.post('/auth/session', async (req, res) => {
   const { email, password } = req.body;
   console.log(`Intento de login para: ${email}`);
   try {
