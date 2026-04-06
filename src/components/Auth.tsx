@@ -10,11 +10,22 @@ export const Auth = ({ onLogin }: { onLogin: (user: any) => void }) => {
     e.preventDefault();
     setIsLoading(true);
     try {
-      const response = await fetch('/api/auth/session', {
+      // Intentar POST primero
+      let response = await fetch('/api/auth/session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
       });
+      
+      // Si el POST falla con 405, intentar GET como fallback (workaround para proxy Caddy)
+      if (response.status === 405) {
+        console.warn('POST /api/auth/session falló con 405. Intentando GET fallback...');
+        const params = new URLSearchParams({ email, password });
+        response = await fetch(`/api/auth/session?${params.toString()}`, {
+          method: 'GET',
+          headers: { 'Accept': 'application/json' },
+        });
+      }
       
       if (response.ok) {
         const data = await response.json();

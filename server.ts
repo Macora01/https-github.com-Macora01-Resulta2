@@ -116,6 +116,32 @@ const authenticateToken = (req: any, res: any, next: any) => {
 // 3. Definición de Rutas de la API (Prioridad Máxima)
 const apiRouter = express.Router();
 
+apiRouter.get('/auth/session', async (req, res) => {
+  const { email, password } = req.query;
+  console.log(`Intento de login (GET) para: ${email}`);
+  try {
+    let user;
+    if (isMockMode) {
+      user = mockUsers.find(u => u.email === email);
+    } else {
+      const result = await pool!.query('SELECT * FROM users WHERE email = $1', [email]);
+      user = result.rows[0];
+    }
+
+    if (user && await bcrypt.compare(password as string, user.password)) {
+      const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET);
+      console.log(`Login (GET) exitoso: ${email}`);
+      res.json({ token, user: { email: user.email, role: user.role } });
+    } else {
+      console.log(`Login (GET) fallido (credenciales): ${email}`);
+      res.status(401).json({ error: 'Credenciales inválidas' });
+    }
+  } catch (err) {
+    console.error('Error en login (GET):', err);
+    res.status(500).json({ error: 'Error interno del servidor' });
+  }
+});
+
 apiRouter.post('/auth/session', async (req, res) => {
   const { email, password } = req.body;
   console.log(`Intento de login para: ${email}`);
