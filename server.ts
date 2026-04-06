@@ -82,33 +82,23 @@ async function initDb() {
 }
 
 const app = express();
+
+// 1. Middlewares básicos
 app.use(cors());
 app.use(express.json());
 
-// Logging middleware to debug 405 errors
+// 2. Logging para depuración
 app.use((req, res, next) => {
   console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
   next();
 });
 
-// Auth Middleware
-const authenticateToken = (req: any, res: any, next: any) => {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
+// 3. Definición de Rutas de la API (Prioridad Máxima)
+const apiRouter = express.Router();
 
-  if (!token) return res.sendStatus(401);
-
-  jwt.verify(token, JWT_SECRET, (err: any, user: any) => {
-    if (err) return res.sendStatus(403);
-    req.user = user;
-    next();
-  });
-};
-
-// API Routes
-app.post('/api/login', async (req, res) => {
+apiRouter.post('/login', async (req, res) => {
   const { email, password } = req.body;
-  console.log(`Login attempt for: ${email}`);
+  console.log(`Intento de login para: ${email}`);
   try {
     let user;
     if (isMockMode) {
@@ -120,19 +110,19 @@ app.post('/api/login', async (req, res) => {
 
     if (user && await bcrypt.compare(password, user.password)) {
       const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET);
-      console.log(`Login successful for: ${email}`);
+      console.log(`Login exitoso: ${email}`);
       res.json({ token, user: { email: user.email, role: user.role } });
     } else {
-      console.log(`Login failed for: ${email}`);
+      console.log(`Login fallido (credenciales): ${email}`);
       res.status(401).json({ error: 'Credenciales inválidas' });
     }
   } catch (err) {
-    console.error('Login error:', err);
-    res.status(500).json({ error: 'Error en el servidor' });
+    console.error('Error en login:', err);
+    res.status(500).json({ error: 'Error interno del servidor' });
   }
 });
 
-app.get('/api/financial-data', authenticateToken, async (req, res) => {
+apiRouter.get('/financial-data', authenticateToken, async (req, res) => {
   try {
     let records;
     if (isMockMode) {
@@ -141,7 +131,6 @@ app.get('/api/financial-data', authenticateToken, async (req, res) => {
       const result = await pool!.query('SELECT * FROM financial_records ORDER BY year DESC, month_index ASC');
       records = result.rows;
     }
-    
     res.json(records.map(row => ({
       year: row.year,
       month: row.month,
@@ -156,17 +145,14 @@ app.get('/api/financial-data', authenticateToken, async (req, res) => {
   }
 });
 
-app.post('/api/financial-data', authenticateToken, async (req, res) => {
+apiRouter.post('/financial-data', authenticateToken, async (req, res) => {
   const { year, month, monthIndex, ventasNetas, costo, gastos, resultadoMes } = req.body;
   try {
     if (isMockMode) {
       const index = mockFinancialRecords.findIndex(r => r.year === year && r.monthIndex === monthIndex);
       const newRecord = { year, month, monthIndex, ventasNetas, costo, gastos, resultadoMes };
-      if (index >= 0) {
-        mockFinancialRecords[index] = newRecord;
-      } else {
-        mockFinancialRecords.push(newRecord);
-      }
+      if (index >= 0) mockFinancialRecords[index] = newRecord;
+      else mockFinancialRecords.push(newRecord);
     } else {
       await pool!.query(`
         INSERT INTO financial_records (year, month, month_index, ventas_netas, costo, gastos, resultado_mes)
@@ -184,62 +170,52 @@ app.post('/api/financial-data', authenticateToken, async (req, res) => {
   }
 });
 
-app.post('/api/upload-pdf', authenticateToken, upload.single('file'), async (req, res) => {
+apiRouter.post('/upload-pdf', authenticateToken, upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No se subió ningún archivo' });
-
   try {
     const data = await pdf(req.file.buffer);
-    const text = data.text;
-    res.json({ text, message: 'PDF procesado. Implementar lógica de extracción específica.' });
+    res.json({ text: data.text, message: 'PDF procesado' });
   } catch (err) {
     res.status(500).json({ error: 'Error al procesar PDF' });
   }
 });
 
-app.get('/api/users', authenticateToken, async (req: any, res) => {
+apiRouter.get('/users', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'admin') return res.sendStatus(403);
   try {
-    let users;
-    if (isMockMode) {
-      users = mockUsers;
-    } else {
-      const result = await pool!.query('SELECT id, email, role, created_at FROM users');
-      users = result.rows;
-    }
+    let users = isMockMode ? mockUsers : (await pool!.query('SELECT id, email, role, created_at FROM users')).rows;
     res.json(users);
   } catch (err) {
     res.status(500).json({ error: 'Error al obtener usuarios' });
   }
 });
 
-app.post('/api/users', authenticateToken, async (req: any, res) => {
+apiRouter.post('/users', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'admin') return res.sendStatus(403);
   const { email, password, role } = req.body;
   try {
     const hashedPassword = await bcrypt.hash(password, 10);
-    if (isMockMode) {
-      mockUsers.push({ id: Date.now(), email, password: hashedPassword, role });
-    } else {
-      await pool!.query('INSERT INTO users (email, password, role) VALUES ($1, $2, $3)', [email, hashedPassword, role]);
-    }
+    if (isMockMode) mockUsers.push({ id: Date.now(), email, password: hashedPassword, role });
+    else await pool!.query('INSERT INTO users (email, password, role) VALUES ($1, $2, $3)', [email, hashedPassword, role]);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: 'Error al crear usuario' });
   }
 });
 
+// Montar el router de la API
+app.use('/api', apiRouter);
+
+// 4. Servir archivos estáticos y SPA Fallback
 async function startServer() {
-  console.log(`Starting server in ${process.env.NODE_ENV || 'development'} mode...`);
+  console.log(`Iniciando servidor en modo ${process.env.NODE_ENV || 'development'}...`);
   
   try {
     await initDb();
-    console.log('Database initialized successfully');
+    console.log('Base de datos inicializada');
   } catch (err) {
-    console.error('Database initialization failed:', err);
+    console.error('Error al inicializar BD:', err);
   }
-
-  // API routes are already defined on 'app' before this function is called.
-  // We just need to handle static files and SPA fallback.
 
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
@@ -250,35 +226,18 @@ async function startServer() {
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     if (fs.existsSync(distPath)) {
-      console.log(`Serving static files from: ${distPath}`);
-      
-      // Serve static files but skip for /api routes
-      app.use((req, res, next) => {
-        if (req.url.startsWith('/api')) {
-          return next();
-        }
-        express.static(distPath)(req, res, next);
-      });
-
-      // SPA fallback
+      app.use(express.static(distPath));
       app.get('*', (req, res) => {
-        if (req.url.startsWith('/api')) {
-          console.warn(`API route not found: ${req.method} ${req.url}`);
-          return res.status(404).json({ error: 'API route not found' });
-        }
         res.sendFile(path.join(distPath, 'index.html'));
       });
     } else {
-      console.error(`Dist directory not found at: ${distPath}. Build might have failed.`);
-      app.get('*', (req, res) => {
-        res.status(500).send('Production build not found. Please run npm run build.');
-      });
+      console.error('Carpeta dist no encontrada. Ejecuta npm run build.');
     }
   }
 
   const PORT = Number(process.env.PORT) || 3000;
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on http://0.0.0.0:${PORT}`);
+    console.log(`Servidor corriendo en el puerto ${PORT}`);
   });
 }
 
