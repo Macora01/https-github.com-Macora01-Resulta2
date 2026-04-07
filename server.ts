@@ -113,6 +113,22 @@ async function initDb() {
 
 const app = express();
 
+// Marcador para saber si la respuesta viene de Node.js o de Nginx
+app.use((req, res, next) => {
+  res.setHeader('X-Served-By', 'NodeJS-Express');
+  console.log(`🎯 PETICIÓN RECIBIDA EN NODE: ${req.method} ${req.url}`);
+  next();
+});
+
+// Rutas de diagnóstico con prioridad ABSOLUTA (antes de cualquier middleware)
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', source: 'NodeJS Direct', time: new Date().toISOString() });
+});
+
+app.get('/api-health', (req, res) => {
+  res.json({ status: 'ok', source: 'NodeJS API Direct', time: new Date().toISOString() });
+});
+
 // 3. Definición de Rutas de la API (Prioridad Máxima)
 const apiRouter = express.Router();
 
@@ -141,15 +157,7 @@ app.use((req, res, next) => {
 app.use('/api', apiRouter);
 
 // Rutas de diagnóstico directo en la app
-app.get('/api-health', (req, res) => {
-  console.log('🔍 Check de salud en /api-health');
-  res.json({ status: 'ok', message: 'API direct route is working', time: new Date().toISOString() });
-});
-
-app.get('/health', (req, res) => {
-  console.log('🔍 Check de salud en /health');
-  res.json({ status: 'ok', message: 'Global route is working', time: new Date().toISOString() });
-});
+// Ya definidas arriba
 
 // Catch-all para /api que no coinciden (para evitar que devuelvan el index.html)
 app.use('/api/*', (req, res) => {
