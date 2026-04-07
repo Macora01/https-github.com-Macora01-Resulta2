@@ -113,14 +113,52 @@ async function initDb() {
 
 const app = express();
 
-// 1. Middlewares básicos
+// 3. Definición de Rutas de la API (Prioridad Máxima)
+const apiRouter = express.Router();
+
+// 1. Middlewares de pre-procesamiento (Prioridad máxima)
 app.use(cors());
 app.use(express.json());
 
-// 2. Logging para depuración
+// Normalización de rutas para evitar problemas con proxies/trailing slashes
 app.use((req, res, next) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  if (req.path.length > 1 && req.path.endsWith('/')) {
+    const query = req.url.slice(req.path.length);
+    const safepath = req.path.slice(0, -1);
+    console.log(`🔄 Normalizando ruta: ${req.path} -> ${safepath}`);
+    return res.redirect(301, safepath + query);
+  }
   next();
+});
+
+// Logger de depuración global
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url} - IP: ${req.ip}`);
+  next();
+});
+
+// 2. Montar el router de la API INMEDIATAMENTE
+app.use('/api', apiRouter);
+
+// Rutas de diagnóstico directo en la app
+app.get('/api-health', (req, res) => {
+  console.log('🔍 Check de salud en /api-health');
+  res.json({ status: 'ok', message: 'API direct route is working', time: new Date().toISOString() });
+});
+
+app.get('/health', (req, res) => {
+  console.log('🔍 Check de salud en /health');
+  res.json({ status: 'ok', message: 'Global route is working', time: new Date().toISOString() });
+});
+
+// Catch-all para /api que no coinciden (para evitar que devuelvan el index.html)
+app.use('/api/*', (req, res) => {
+  console.warn(`⚠️ Ruta de API no encontrada: ${req.method} ${req.originalUrl}`);
+  res.status(404).json({ 
+    error: 'API Endpoint not found', 
+    method: req.method, 
+    path: req.originalUrl 
+  });
 });
 
 // Auth Middleware
@@ -144,7 +182,7 @@ const authenticateToken = (req: any, res: any, next: any) => {
 };
 
 // 3. Definición de Rutas de la API (Prioridad Máxima)
-const apiRouter = express.Router();
+// Ya definido arriba
 
 // Endpoint para verificar el estado de la base de datos (Público)
 apiRouter.get('/db-status', async (req, res) => {
@@ -193,7 +231,7 @@ apiRouter.get('/auth/session', async (req, res) => {
   const email = (req.query.email || req.query.u) as string;
   const password = (req.query.password || req.query.p) as string;
   
-  console.log(`Intento de login (GET) para: ${email}`);
+  console.log(`🔑 Intento de login (GET) para: ${email}`);
   try {
     let user;
     if (isMockMode) {
@@ -219,7 +257,7 @@ apiRouter.get('/auth/session', async (req, res) => {
 
 apiRouter.post('/auth/session', async (req, res) => {
   const { email, password } = req.body;
-  console.log(`Intento de login para: ${email}`);
+  console.log(`🔑 Intento de login (POST) para: ${email}`);
   try {
     let user;
     if (isMockMode) {
@@ -395,18 +433,10 @@ apiRouter.post('/users', authenticateToken, async (req: any, res) => {
 
 // 4. Servir archivos estáticos y SPA Fallback
 async function startServer() {
-  console.log(`Iniciando servidor en modo ${process.env.NODE_ENV || 'development'}...`);
-  
-  // Montar el router de la API ANTES de cualquier otra cosa pesada
-  app.use('/api', apiRouter);
-  
-  // Catch-all para /api que no coinciden con ninguna ruta
-  app.use('/api/*', (req, res) => {
-    res.status(404).json({ error: `Ruta de API no encontrada: ${req.method} ${req.originalUrl}` });
-  });
+  console.log(`🚀 Iniciando servidor en modo ${process.env.NODE_ENV || 'development'}...`);
   
   // Endpoint de salud básico (fuera del router para máxima visibilidad)
-  app.get('/health', (req, res) => res.json({ status: 'ok', time: new Date().toISOString() }));
+  // Ya definidos arriba
 
   // Inicializar BD
   await initDb();

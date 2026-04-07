@@ -42,6 +42,11 @@ export const Auth = ({ onLogin }: { onLogin: (user: any) => void }) => {
             },
           });
           console.log(`📥 Respuesta GET fallback: ${response.status} ${response.statusText}`);
+          console.log(`🔗 URL final (tras posibles redirecciones): ${response.url}`);
+          
+          if (response.url.endsWith('/') || !response.url.includes('/api/')) {
+            console.error('🚨 ¡REDIRECCIÓN DETECTADA! El servidor redirigió la API a la página principal.');
+          }
         } catch (getErr) {
           console.error('❌ Error de red en GET fallback:', getErr);
           throw new Error('No se pudo contactar con el servidor mediante ningún método.');
