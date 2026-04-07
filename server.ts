@@ -419,17 +419,33 @@ apiRouter.post('/upload-pdf', authenticateToken, upload.single('file'), async (r
     const upperText = text.toUpperCase();
     
     // 1. Detectar si es un "CUADRO DE RESULTADO" (formato tabla multi-año)
-    if (upperText.includes('CUADRO DE RESULTADO') || upperText.includes('ESTADO DE RESULTADO')) {
+    if (upperText.includes('CUADRO DE RESULTADO') || upperText.includes('ESTADO DE RESULTADO') || upperText.includes('RESUMEN')) {
       console.log('📊 Detectado formato de Tabla de Resultados');
       const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
       
       // Encontrar años en la cabecera
       let years: number[] = [];
-      for (const line of lines) {
-        if (line.includes('MES') && line.match(/202[2-9]/)) {
+      let headerLineIdx = -1;
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if ((line.toUpperCase().includes('MES') || line.toUpperCase().includes('DETALLE')) && line.match(/202[2-9]/)) {
           const matches = line.match(/202[2-9]/g);
           if (matches) {
             years = matches.map(Number);
+            headerLineIdx = i;
+            break;
+          }
+        }
+      }
+
+      // Si no encontramos la cabecera con "MES", buscamos cualquier línea con múltiples años
+      if (years.length === 0) {
+        for (let i = 0; i < lines.length; i++) {
+          const matches = lines[i].match(/\b202[2-9]\b/g);
+          if (matches && matches.length >= 1) {
+            const extractedYears: number[] = matches.map(m => Number(m));
+            years = Array.from(new Set(extractedYears)).sort((a: number, b: number) => a - b);
+            headerLineIdx = i;
             break;
           }
         }
@@ -438,100 +454,112 @@ apiRouter.post('/upload-pdf', authenticateToken, upload.single('file'), async (r
       if (years.length > 0) {
         console.log('📅 Años detectados en tabla:', years);
         const records: any[] = [];
-        let currentMonthName = '';
-        let currentMonthIdx = -1;
+        
+        // Función interna para extraer valores de una línea
+        const getValuesFromLine = (l: string) => {
+          // Busca números con formato chileno (puntos para miles, coma para decimales) o guiones para cero
+          const matches = l.match(/(?:-?\d{1,3}(?:\.\d{3})*(?:,\d+)?|-)/g) || [];
+          return matches.map(m => {
+            if (m === '-') return 0;
+            // Limpiar puntos de miles y cambiar coma decimal por punto
+            let val = m.replace(/\./g, '').replace(/,/g, '.');
+            return parseFloat(val);
+          }).filter(n => !isNaN(n));
+        };
 
-        for (let i = 0; i < lines.length; i++) {
+        let currentMonthIdx = -1;
+        let currentMonthName = '';
+
+        for (let i = headerLineIdx + 1; i < lines.length; i++) {
           const line = lines[i];
           const upperLine = line.toUpperCase();
 
-          // Detectar mes (con soporte para errores de OCR como "OCUBRE")
+          // Ignorar líneas de totales para evitar duplicar datos
+          if (upperLine.includes('TOTAL') || upperLine.includes('ACUMULADO')) {
+            console.log('⏭️ Ignorando línea de totales:', line);
+            continue;
+          }
+
+          // Detectar mes
           const mIdx = months.findIndex(m => {
             const mUpper = m.toUpperCase();
-            if (upperLine === mUpper) return true;
-            if (mUpper === 'OCTUBRE' && upperLine === 'OCUBRE') return true;
-            if (mUpper === 'SEPTIEMBRE' && upperLine === 'SETIEMBRE') return true;
-            // Si la línea es solo el mes o empieza por el mes seguido de espacio
-            if (upperLine.startsWith(mUpper + ' ') || upperLine.startsWith(mUpper + '\t')) return true;
-            return false;
+            // El mes puede estar solo o seguido de algo
+            return upperLine === mUpper || upperLine.startsWith(mUpper + ' ') || upperLine.startsWith(mUpper + '\t');
           });
 
           if (mIdx >= 0) {
             currentMonthName = months[mIdx];
             currentMonthIdx = mIdx;
-            console.log(`📍 Procesando mes: ${currentMonthName}`);
+            console.log(`📍 Iniciando extracción para: ${currentMonthName}`);
             
-            // Buscar la línea de datos (suele ser la siguiente o estar en la misma)
-            // En este formato, los valores de ventas, costos, etc suelen venir en líneas separadas o agrupados
-            // Intentamos buscar bloques de números
-            let dataLine = '';
-            let foundData = false;
-            
-            // Mirar las siguientes 10 líneas para encontrar los valores
-            for (let j = 1; j <= 10 && (i + j) < lines.length; j++) {
-              const nextLine = lines[i + j];
-              // Si encontramos otro mes, paramos
-              if (months.some(m => nextLine.toUpperCase().startsWith(m.toUpperCase()))) break;
-              
-              const numbers = nextLine.match(/-?\d+[\d.,]*/g);
-              if (numbers && numbers.length >= years.length) {
-                // Podría ser una línea de datos
-                console.log(`🔢 Línea de datos potencial para ${currentMonthName}:`, nextLine);
-                // Aquí la lógica se vuelve compleja porque depende de qué fila estamos (Ventas, Costos, etc)
-              }
-            }
-            continue;
-          }
-
-          if (currentMonthIdx === -1) continue;
-
-          // Función interna para extraer valores de una línea
-          const getValuesFromLine = (l: string) => {
-            const matches = l.match(/(?:-?\d{1,3}(?:\.\d{3})*(?:,\d+)?|-)/g) || [];
-            return matches.map(m => {
-              if (m === '-') return 0;
-              return parseFloat(m.replace(/\./g, '').replace(/,/g, '.'));
-            });
-          };
-
-          if (upperLine.includes('VENTAS NETAS')) {
-            const vNetas = getValuesFromLine(line);
-            
-            // Buscar las siguientes líneas para Costo, Gastos, Resultado
+            // Una vez detectado el mes, buscamos las siguientes líneas de datos
+            // El formato suele ser: Ventas, Costo, Gastos, Resultado (en ese orden o con etiquetas)
+            let vNetas: number[] = [];
             let cVentas: number[] = [];
             let gOps: number[] = [];
             let rMes: number[] = [];
 
-            for (let j = 1; j <= 4; j++) {
-              const nextLine = lines[i + j];
-              if (!nextLine) break;
-              const nextUpper = nextLine.toUpperCase();
-              if (nextUpper.includes('COSTO')) cVentas = getValuesFromLine(nextLine);
-              else if (nextUpper.includes('GASTOS')) gOps = getValuesFromLine(nextLine);
-              else if (nextUpper.includes('RESULTADO')) rMes = getValuesFromLine(nextLine);
+            let dataFoundCount = 0;
+            for (let j = 1; j <= 15 && (i + j) < lines.length; j++) {
+              const dataLine = lines[i + j];
+              const upperDataLine = dataLine.toUpperCase();
+              
+              // Si encontramos otro mes o un total, paramos la búsqueda para este mes
+              if (months.some(m => upperDataLine === m.toUpperCase() || upperDataLine.startsWith(m.toUpperCase() + ' '))) break;
+              if (upperDataLine.includes('TOTAL') && !upperDataLine.includes('TOTAL VENTAS')) {
+                // Si es un total general, paramos. Si es "Total Ventas" (etiqueta), seguimos.
+                if (upperDataLine === 'TOTAL' || upperDataLine.startsWith('TOTAL ')) break;
+              }
+
+              const vals = getValuesFromLine(dataLine);
+              if (vals.length >= years.length) {
+                // Asignar según etiqueta o por orden si no hay etiquetas claras
+                if (upperDataLine.includes('VENTA') || upperDataLine.includes('INGRESO')) {
+                  vNetas = vals;
+                  dataFoundCount++;
+                } else if (upperDataLine.includes('COSTO')) {
+                  cVentas = vals;
+                  dataFoundCount++;
+                } else if (upperDataLine.includes('GASTO') || upperDataLine.includes('ADMINISTRACI')) {
+                  gOps = vals;
+                  dataFoundCount++;
+                } else if (upperDataLine.includes('RESULTADO') || upperDataLine.includes('UTILIDAD') || upperDataLine.includes('MARGEN')) {
+                  rMes = vals;
+                  dataFoundCount++;
+                } else if (dataFoundCount === 0) {
+                  vNetas = vals; dataFoundCount++;
+                } else if (dataFoundCount === 1) {
+                  cVentas = vals; dataFoundCount++;
+                } else if (dataFoundCount === 2) {
+                  gOps = vals; dataFoundCount++;
+                } else if (dataFoundCount === 3) {
+                  rMes = vals; dataFoundCount++;
+                }
+              }
+              
+              if (dataFoundCount >= 4) break;
             }
 
-            // Mapear a cada año (alineando por el final si faltan valores, común en tablas financieras)
+            // Guardar registros para cada año
             years.forEach((y, idx) => {
-              const vIdx = idx - (years.length - vNetas.length);
-              const cIdx = idx - (years.length - cVentas.length);
-              const gIdx = idx - (years.length - gOps.length);
-              const rIdx = idx - (years.length - rMes.length);
-
+              // Alinear valores (a veces los años están en columnas y el PDF los extrae en orden)
               const record = {
                 year: y,
                 month: currentMonthName,
                 monthIndex: currentMonthIdx,
-                ventasNetas: vIdx >= 0 ? vNetas[vIdx] : 0,
-                costo: cIdx >= 0 ? cVentas[cIdx] : 0,
-                gastos: gIdx >= 0 ? gOps[gIdx] : 0,
-                resultadoMes: rIdx >= 0 ? rMes[rIdx] : 0
+                ventasNetas: vNetas[idx] || 0,
+                costo: cVentas[idx] || 0,
+                gastos: gOps[idx] || 0,
+                resultadoMes: rMes[idx] || 0
               };
-              
+
               if (record.ventasNetas !== 0 || record.resultadoMes !== 0) {
                 records.push(record);
               }
             });
+            
+            // Saltar las líneas procesadas
+            // i += 4; // No saltamos fijo, dejamos que el loop principal encuentre el siguiente mes
           }
         }
 
