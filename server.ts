@@ -512,37 +512,65 @@ apiRouter.post('/upload-pdf', authenticateToken, upload.single('file'), async (r
               }
 
               const vals = getValuesFromLine(dataLine);
-              if (vals.length >= years.length) {
-                // Asignar según etiqueta o por orden si no hay etiquetas claras
+              if (vals.length > 0) {
+                // Si la línea tiene valores, intentamos asignarlos
+                // Si vals.length < years.length, asumimos que son los valores del primer año detectado (o el año actual)
+                // Si vals.length == years.length * 4, es una línea que contiene todo el bloque (raro pero posible)
+                
+                const assignValues = (target: number[]) => {
+                  // Si ya tenemos valores, no sobreescribimos a menos que sea una etiqueta explícita
+                  if (target.length === 0 || upperDataLine.includes('VENTA') || upperDataLine.includes('COSTO') || upperDataLine.includes('GASTO') || upperDataLine.includes('RESULTADO')) {
+                    // Alinear: si faltan valores, rellenamos con 0 o asumimos que el valor es para el año correspondiente
+                    // En este formato, si hay un solo valor suele ser para el año de la columna actual
+                    if (vals.length === 1 && years.length > 1) {
+                      // Intentar determinar a qué año pertenece por la posición del número en la línea (complejo)
+                      // Por ahora, lo asignamos al primer año si no hay más info
+                      target[0] = vals[0];
+                    } else {
+                      for (let k = 0; k < Math.min(vals.length, years.length); k++) {
+                        target[k] = vals[k];
+                      }
+                    }
+                    return true;
+                  }
+                  return false;
+                };
+
                 if (upperDataLine.includes('VENTA') || upperDataLine.includes('INGRESO')) {
-                  vNetas = vals;
-                  dataFoundCount++;
+                  if (assignValues(vNetas)) dataFoundCount = Math.max(dataFoundCount, 1);
                 } else if (upperDataLine.includes('COSTO')) {
-                  cVentas = vals;
-                  dataFoundCount++;
+                  if (assignValues(cVentas)) dataFoundCount = Math.max(dataFoundCount, 2);
                 } else if (upperDataLine.includes('GASTO') || upperDataLine.includes('ADMINISTRACI')) {
-                  gOps = vals;
-                  dataFoundCount++;
+                  if (assignValues(gOps)) dataFoundCount = Math.max(dataFoundCount, 3);
                 } else if (upperDataLine.includes('RESULTADO') || upperDataLine.includes('UTILIDAD') || upperDataLine.includes('MARGEN')) {
-                  rMes = vals;
-                  dataFoundCount++;
-                } else if (dataFoundCount === 0) {
-                  vNetas = vals; dataFoundCount++;
-                } else if (dataFoundCount === 1) {
-                  cVentas = vals; dataFoundCount++;
-                } else if (dataFoundCount === 2) {
-                  gOps = vals; dataFoundCount++;
-                } else if (dataFoundCount === 3) {
-                  rMes = vals; dataFoundCount++;
+                  if (assignValues(rMes)) dataFoundCount = Math.max(dataFoundCount, 4);
+                } else {
+                  // Sin etiqueta clara, usamos el orden
+                  if (dataFoundCount === 0) {
+                    vNetas = vals; dataFoundCount++;
+                  } else if (dataFoundCount === 1) {
+                    cVentas = vals; dataFoundCount++;
+                  } else if (dataFoundCount === 2) {
+                    gOps = vals; dataFoundCount++;
+                  } else if (dataFoundCount === 3) {
+                    rMes = vals; dataFoundCount++;
+                  }
                 }
               }
               
-              if (dataFoundCount >= 4) break;
+              if (dataFoundCount >= 4) {
+                // Verificamos si la siguiente línea también tiene números, por si acaso
+                const nextLine = lines[i + j + 1];
+                if (nextLine && getValuesFromLine(nextLine).length > 0) {
+                  // Continuamos buscando, tal vez hay más datos
+                } else {
+                  // break; // No rompemos para permitir capturar etiquetas que vengan después de los números
+                }
+              }
             }
 
             // Guardar registros para cada año
             years.forEach((y, idx) => {
-              // Alinear valores (a veces los años están en columnas y el PDF los extrae en orden)
               const record = {
                 year: y,
                 month: currentMonthName,
@@ -553,7 +581,8 @@ apiRouter.post('/upload-pdf', authenticateToken, upload.single('file'), async (r
                 resultadoMes: rMes[idx] || 0
               };
 
-              if (record.ventasNetas !== 0 || record.resultadoMes !== 0) {
+              // Solo guardar si hay algún dato significativo
+              if (record.ventasNetas !== 0 || record.costo !== 0 || record.gastos !== 0 || record.resultadoMes !== 0) {
                 records.push(record);
               }
             });
