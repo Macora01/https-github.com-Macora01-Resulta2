@@ -37,15 +37,18 @@ let mockFinancialRecords: any[] = [];
 
 async function initDb() {
   if (isMockMode) {
-    console.warn('DATABASE_URL not found. Running in MOCK MODE with in-memory data.');
+    console.warn('⚠️ DATABASE_URL no encontrada. Corriendo en MODO MOCK con datos en memoria.');
     const hashedPassword = await bcrypt.hash('admin123', 10);
     mockUsers[0].password = hashedPassword;
     return;
   }
   
+  const connectionUrl = process.env.DATABASE_URL!;
+  const maskedUrl = connectionUrl.replace(/:([^@]+)@/, ':****@');
+  console.log(`📡 Intentando conectar a: ${maskedUrl}`);
+
   const client = await pool!.connect();
   try {
-    console.log('✅ Database connected successfully to PostgreSQL');
     await client.query(`
       CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
@@ -71,14 +74,24 @@ async function initDb() {
 
     // Create default admin if not exists
     const adminEmail = 'admin@facore.cl';
-    const res = await client.query('SELECT * FROM users WHERE email = $1', [adminEmail]);
-    if (res.rows.length === 0) {
+    const adminRes = await client.query('SELECT * FROM users WHERE email = $1', [adminEmail]);
+    if (adminRes.rows.length === 0) {
       const hashedPassword = await bcrypt.hash('admin123', 10);
       await client.query('INSERT INTO users (email, password, role) VALUES ($1, $2, $3)', [adminEmail, hashedPassword, 'admin']);
-      console.log('Default admin created');
+      console.log('👤 Administrador por defecto creado');
     }
+
+    // Obtener estadísticas para el log
+    const userCount = await client.query('SELECT COUNT(*) FROM users');
+    const recordsCount = await client.query('SELECT COUNT(*) FROM financial_records');
+
+    console.log('📊 Estadísticas de la base de datos:');
+    console.log(`- Usuarios: ${userCount.rows[0].count}`);
+    console.log(`- Registros Financieros: ${recordsCount.rows[0].count}`);
+    console.log('✅ PostgreSQL Database initialized successfully');
+
   } catch (err) {
-    console.error('❌ Database initialization error:', err);
+    console.error('❌ Error de inicialización de base de datos:', err);
     throw err;
   } finally {
     client.release();
@@ -365,7 +378,6 @@ async function startServer() {
   
   try {
     await initDb();
-    console.log('Base de datos inicializada');
   } catch (err) {
     console.error('Error al inicializar BD:', err);
   }
@@ -390,7 +402,7 @@ async function startServer() {
 
   const PORT = Number(process.env.PORT) || 3000;
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Servidor corriendo en el puerto ${PORT}`);
+    console.log(`🚀 Server ready at http://0.0.0.0:${PORT}`);
   });
 }
 
