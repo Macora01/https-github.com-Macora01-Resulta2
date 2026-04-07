@@ -28,10 +28,8 @@ const upload = multer({ storage: storage });
 
 const pool = isMockMode ? null : new Pool({
   connectionString: process.env.DATABASE_URL,
-  // Desactivar SSL si es localhost o IP local, activar con rejectUnauthorized: false si es remoto
-  ssl: (process.env.DATABASE_URL?.includes('localhost') || process.env.DATABASE_URL?.includes('127.0.0.1')) 
-    ? false 
-    : { rejectUnauthorized: false }
+  // SSL desactivado por petición del usuario para evitar problemas de conexión en VPS
+  ssl: false
 });
 
 // Mock data for in-memory storage
@@ -121,7 +119,7 @@ app.use(express.json());
 
 // 2. Logging para depuración
 app.use((req, res, next) => {
-  console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
   next();
 });
 
@@ -399,10 +397,7 @@ apiRouter.post('/users', authenticateToken, async (req: any, res) => {
 async function startServer() {
   console.log(`Iniciando servidor en modo ${process.env.NODE_ENV || 'development'}...`);
   
-  // Inicializar BD
-  await initDb();
-
-  // Montar el router de la API ANTES del middleware de Vite/Estáticos
+  // Montar el router de la API ANTES de cualquier otra cosa pesada
   app.use('/api', apiRouter);
   
   // Catch-all para /api que no coinciden con ninguna ruta
@@ -412,6 +407,9 @@ async function startServer() {
   
   // Endpoint de salud básico (fuera del router para máxima visibilidad)
   app.get('/health', (req, res) => res.json({ status: 'ok', time: new Date().toISOString() }));
+
+  // Inicializar BD
+  await initDb();
 
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
