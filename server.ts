@@ -28,6 +28,10 @@ const upload = multer({ storage: storage });
 
 const pool = isMockMode ? null : new Pool({
   connectionString: process.env.DATABASE_URL,
+  // Desactivar SSL si es localhost o IP local, activar con rejectUnauthorized: false si es remoto
+  ssl: (process.env.DATABASE_URL?.includes('localhost') || process.env.DATABASE_URL?.includes('127.0.0.1')) 
+    ? false 
+    : { rejectUnauthorized: false }
 });
 
 // Mock data for in-memory storage
@@ -48,54 +52,64 @@ async function initDb() {
   const maskedUrl = connectionUrl.replace(/:([^@]+)@/, ':****@');
   console.log(`📡 Intentando conectar a: ${maskedUrl}`);
 
-  const client = await pool!.connect();
   try {
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS users (
-        id SERIAL PRIMARY KEY,
-        email TEXT UNIQUE NOT NULL,
-        password TEXT NOT NULL,
-        role TEXT DEFAULT 'user',
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
+    // Intentar conectar con un timeout de 5 segundos
+    const client = await Promise.race([
+      pool!.connect(),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Timeout al conectar a la base de datos (5s)')), 5000))
+    ]);
+    
+    try {
+      console.log('✅ Conexión inicial a PostgreSQL establecida');
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS users (
+          id SERIAL PRIMARY KEY,
+          email TEXT UNIQUE NOT NULL,
+          password TEXT NOT NULL,
+          role TEXT DEFAULT 'user',
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
 
-      CREATE TABLE IF NOT EXISTS financial_records (
-        id SERIAL PRIMARY KEY,
-        year INTEGER NOT NULL,
-        month TEXT NOT NULL,
-        month_index INTEGER NOT NULL,
-        ventas_netas NUMERIC NOT NULL,
-        costo NUMERIC NOT NULL,
-        gastos NUMERIC NOT NULL,
-        resultado_mes NUMERIC NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE(year, month_index)
-      );
-    `);
+        CREATE TABLE IF NOT EXISTS financial_records (
+          id SERIAL PRIMARY KEY,
+          year INTEGER NOT NULL,
+          month TEXT NOT NULL,
+          month_index INTEGER NOT NULL,
+          ventas_netas NUMERIC NOT NULL,
+          costo NUMERIC NOT NULL,
+          gastos NUMERIC NOT NULL,
+          resultado_mes NUMERIC NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(year, month_index)
+        );
+      `);
 
-    // Create default admin if not exists
-    const adminEmail = 'admin@facore.cl';
-    const adminRes = await client.query('SELECT * FROM users WHERE email = $1', [adminEmail]);
-    if (adminRes.rows.length === 0) {
-      const hashedPassword = await bcrypt.hash('admin123', 10);
-      await client.query('INSERT INTO users (email, password, role) VALUES ($1, $2, $3)', [adminEmail, hashedPassword, 'admin']);
-      console.log('👤 Administrador por defecto creado');
+      // Create default admin if not exists
+      const adminEmail = 'admin@facore.cl';
+      const adminRes = await client.query('SELECT * FROM users WHERE email = $1', [adminEmail]);
+      if (adminRes.rows.length === 0) {
+        const hashedPassword = await bcrypt.hash('admin123', 10);
+        await client.query('INSERT INTO users (email, password, role) VALUES ($1, $2, $3)', [adminEmail, hashedPassword, 'admin']);
+        console.log('👤 Administrador por defecto creado');
+      }
+
+      // Obtener estadísticas para el log
+      const userCount = await client.query('SELECT COUNT(*) FROM users');
+      const recordsCount = await client.query('SELECT COUNT(*) FROM financial_records');
+
+      console.log('📊 Estadísticas de la base de datos:');
+      console.log(`- Usuarios: ${userCount.rows[0].count}`);
+      console.log(`- Registros Financieros: ${recordsCount.rows[0].count}`);
+      console.log('✅ PostgreSQL Database initialized successfully');
+
+    } finally {
+      client.release();
     }
-
-    // Obtener estadísticas para el log
-    const userCount = await client.query('SELECT COUNT(*) FROM users');
-    const recordsCount = await client.query('SELECT COUNT(*) FROM financial_records');
-
-    console.log('📊 Estadísticas de la base de datos:');
-    console.log(`- Usuarios: ${userCount.rows[0].count}`);
-    console.log(`- Registros Financieros: ${recordsCount.rows[0].count}`);
-    console.log('✅ PostgreSQL Database initialized successfully');
-
   } catch (err) {
-    console.error('❌ Error de inicialización de base de datos:', err);
-    throw err;
-  } finally {
-    client.release();
+    console.error('❌ Error crítico de base de datos:', err);
+    // No lanzamos el error para permitir que el servidor inicie en modo degradado si es necesario
+    // pero marcamos que estamos en modo error
+    (global as any).dbError = err instanceof Error ? err.message : String(err);
   }
 }
 
@@ -146,6 +160,15 @@ apiRouter.get('/db-status', async (req, res) => {
       });
     }
     
+    if ((global as any).dbError) {
+      return res.status(500).json({
+        status: 'ERROR',
+        message: 'Error de conexión persistente con la base de datos',
+        error: (global as any).dbError,
+        database_url_present: true
+      });
+    }
+
     const result = await pool!.query('SELECT NOW()');
     res.json({ 
       status: 'CONNECTED', 
@@ -372,18 +395,23 @@ apiRouter.post('/users', authenticateToken, async (req: any, res) => {
   }
 });
 
-// Montar el router de la API
-app.use('/api', apiRouter);
-
 // 4. Servir archivos estáticos y SPA Fallback
 async function startServer() {
   console.log(`Iniciando servidor en modo ${process.env.NODE_ENV || 'development'}...`);
   
-  try {
-    await initDb();
-  } catch (err) {
-    console.error('Error al inicializar BD:', err);
-  }
+  // Inicializar BD
+  await initDb();
+
+  // Montar el router de la API ANTES del middleware de Vite/Estáticos
+  app.use('/api', apiRouter);
+  
+  // Catch-all para /api que no coinciden con ninguna ruta
+  app.use('/api/*', (req, res) => {
+    res.status(404).json({ error: `Ruta de API no encontrada: ${req.method} ${req.originalUrl}` });
+  });
+  
+  // Endpoint de salud básico (fuera del router para máxima visibilidad)
+  app.get('/health', (req, res) => res.json({ status: 'ok', time: new Date().toISOString() }));
 
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({

@@ -106,7 +106,10 @@ export const Config = () => {
             "bg-danger/10 border-danger/20 text-danger"
           )}>
             <Database size={16} />
-            <span>{dbStatus.message}</span>
+            <div className="flex flex-col">
+              <span>{dbStatus.message}</span>
+              {dbStatus.error && <span className="text-[10px] opacity-70 font-normal">{dbStatus.error}</span>}
+            </div>
           </div>
         )}
       </div>

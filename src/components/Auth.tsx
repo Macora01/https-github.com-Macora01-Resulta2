@@ -4,29 +4,33 @@ import { Lock, Mail, ArrowRight, BarChart3, Play } from 'lucide-react';
 export const Auth = ({ onLogin }: { onLogin: (user: any) => void }) => {
   const [email, setEmail] = React.useState('');
   const [password, setPassword] = React.useState('');
+  const [error, setError] = React.useState<string | null>(null);
   const [isLoading, setIsLoading] = React.useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
+    setError(null);
     try {
       // Intentar POST primero
       let response;
       try {
+        console.log('🚀 Auth.tsx: Intentando POST /api/auth/session...');
         response = await fetch('/api/auth/session', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email, password }),
         });
+        console.log('📡 Auth.tsx: Respuesta POST:', response.status);
       } catch (postErr) {
-        console.warn('Error en POST /api/auth/session (posible bloqueo de red/CORS). Intentando GET fallback...');
+        console.warn('⚠️ Auth.tsx: Error en POST /api/auth/session (posible bloqueo de red/CORS). Intentando GET fallback...');
         // Si el fetch falla (ej. por CORS en un 405), forzamos el fallback
-        response = { status: 405, ok: false };
+        response = { status: 405, ok: false } as Response;
       }
       
       // Si el POST falla con 405 o error de red, intentar GET como fallback
       if (response.status === 405 || !response.ok) {
-        console.warn(`POST /api/auth/session falló con ${response.status}. Intentando GET fallback...`);
+        console.warn(`⚠️ Auth.tsx: POST /api/auth/session falló con ${response.status}. Intentando GET fallback...`);
         // Usamos 'u' y 'p' en lugar de 'email' y 'password' para evitar bloqueos de firewall/WAF
         const params = new URLSearchParams({ u: email, p: password });
         try {
@@ -37,6 +41,7 @@ export const Auth = ({ onLogin }: { onLogin: (user: any) => void }) => {
               'Cache-Control': 'no-cache'
             },
           });
+          console.log('📡 Auth.tsx: Respuesta GET fallback:', response.status);
         } catch (getErr) {
           throw new Error('No se pudo contactar con el servidor mediante ningún método.');
         }
@@ -54,10 +59,10 @@ export const Auth = ({ onLogin }: { onLogin: (user: any) => void }) => {
         } catch (e) {
           errorMessage = `Error del servidor (${response.status}): El servidor no devolvió una respuesta válida.`;
         }
-        alert(errorMessage);
+        setError(errorMessage);
       }
     } catch (err) {
-      alert(`Error de conexión: No se pudo contactar con el servidor. Verifica que el backend esté corriendo en el puerto correcto.`);
+      setError(`Error de conexión: No se pudo contactar con el servidor. Verifica que el backend esté corriendo.`);
     } finally {
       setIsLoading(false);
     }
@@ -76,11 +81,17 @@ export const Auth = ({ onLogin }: { onLogin: (user: any) => void }) => {
           <div className="inline-flex items-center justify-center w-16 h-16 bg-primary rounded-2xl shadow-xl shadow-primary/20 mb-4">
             <BarChart3 className="text-white" size={32} />
           </div>
-          <h1 className="text-2xl font-bold text-primary tracking-tight">Macora01/https-github.com-Macora01-Resulta2 on main</h1>
+          <h1 className="text-2xl font-bold text-primary tracking-tight">Resulta2 - Dashboard Financiero</h1>
           <p className="text-text-light font-medium mt-2">Ingresa tus credenciales para acceder al dashboard</p>
         </div>
 
         <div className="glass-card p-8">
+          {error && (
+            <div className="mb-6 p-4 bg-danger/10 border border-danger/20 rounded-xl text-danger text-sm font-medium animate-in slide-in-from-top-2">
+              {error}
+            </div>
+          )}
+          
           <form onSubmit={handleSubmit} className="flex flex-col gap-6">
             <div className="flex flex-col gap-2">
               <label className="text-sm font-bold text-text ml-1">Correo Electrónico</label>
