@@ -15,9 +15,12 @@ export default function App() {
   React.useEffect(() => {
     // Log DB Status for debugging
     fetch('/api/db-status')
-      .then(r => r.json())
-      .then(data => console.log('📊 Estado de Base de Datos:', data))
-      .catch(err => console.error('❌ Error al verificar DB:', err));
+      .then(r => {
+        console.log('📡 App.tsx: Respuesta /api/db-status:', r.status);
+        return r.json();
+      })
+      .then(data => console.log('📊 App.tsx: Estado de Base de Datos:', data))
+      .catch(err => console.error('❌ App.tsx: Error al verificar DB:', err));
 
     try {
       const savedUser = localStorage.getItem('facore_user');

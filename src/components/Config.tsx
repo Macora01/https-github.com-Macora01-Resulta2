@@ -57,11 +57,18 @@ export const Config = () => {
 
   React.useEffect(() => {
     const fetchDbStatus = async () => {
+      console.log('📡 Iniciando fetch a /api/db-status');
       try {
         const response = await fetch('/api/db-status');
+        console.log('📥 Respuesta recibida:', response.status, response.statusText);
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
         const data = await response.json();
+        console.log('✅ Datos de DB Status:', data);
         setDbStatus(data);
       } catch (err) {
+        console.error('❌ Error al obtener estado de DB:', err);
         setDbStatus({ status: 'ERROR', message: 'No se pudo obtener el estado' });
       }
     };

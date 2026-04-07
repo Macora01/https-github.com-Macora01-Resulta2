@@ -1,4 +1,5 @@
 import express from 'express';
+console.log('🚀 El proceso Node.js está iniciando...');
 import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -104,33 +105,6 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Endpoint para verificar el estado de la base de datos (Público)
-app.get('/api/db-status', async (req, res) => {
-  try {
-    if (isMockMode) {
-      return res.json({ 
-        status: 'MOCK', 
-        message: 'Corriendo en modo de prueba (sin base de datos real)',
-        database_url_present: false
-      });
-    }
-    
-    const result = await pool!.query('SELECT NOW()');
-    res.json({ 
-      status: 'CONNECTED', 
-      message: 'Conexión exitosa a PostgreSQL',
-      server_time: result.rows[0].now,
-      database_url_present: true
-    });
-  } catch (err) {
-    res.status(500).json({ 
-      status: 'ERROR', 
-      message: 'Error al conectar con PostgreSQL',
-      error: err instanceof Error ? err.message : String(err)
-    });
-  }
-});
-
 // 2. Logging para depuración
 app.use((req, res, next) => {
   console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
@@ -159,6 +133,35 @@ const authenticateToken = (req: any, res: any, next: any) => {
 
 // 3. Definición de Rutas de la API (Prioridad Máxima)
 const apiRouter = express.Router();
+
+// Endpoint para verificar el estado de la base de datos (Público)
+apiRouter.get('/db-status', async (req, res) => {
+  console.log('🔍 Solicitud recibida en /api/db-status');
+  try {
+    if (isMockMode) {
+      return res.json({ 
+        status: 'MOCK', 
+        message: 'Corriendo en modo de prueba (sin base de datos real)',
+        database_url_present: false
+      });
+    }
+    
+    const result = await pool!.query('SELECT NOW()');
+    res.json({ 
+      status: 'CONNECTED', 
+      message: 'Conexión exitosa a PostgreSQL',
+      server_time: result.rows[0].now,
+      database_url_present: true
+    });
+  } catch (err) {
+    console.error('❌ Error en /api/db-status:', err);
+    res.status(500).json({ 
+      status: 'ERROR', 
+      message: 'Error al conectar con PostgreSQL',
+      error: err instanceof Error ? err.message : String(err)
+    });
+  }
+});
 
 apiRouter.get('/auth/session', async (req, res) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
