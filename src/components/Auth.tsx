@@ -11,24 +11,35 @@ export const Auth = ({ onLogin }: { onLogin: (user: any) => void }) => {
     setIsLoading(true);
     try {
       // Intentar POST primero
-      let response = await fetch('/api/auth/session', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      });
+      let response;
+      try {
+        response = await fetch('/api/auth/session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password }),
+        });
+      } catch (postErr) {
+        console.warn('Error en POST /api/auth/session (posible bloqueo de red/CORS). Intentando GET fallback...');
+        // Si el fetch falla (ej. por CORS en un 405), forzamos el fallback
+        response = { status: 405, ok: false };
+      }
       
-      // Si el POST falla con 405, intentar GET como fallback (workaround para proxy Caddy)
+      // Si el POST falla con 405 o error de red, intentar GET como fallback
       if (response.status === 405 || !response.ok) {
         console.warn(`POST /api/auth/session falló con ${response.status}. Intentando GET fallback...`);
         // Usamos 'u' y 'p' en lugar de 'email' y 'password' para evitar bloqueos de firewall/WAF
         const params = new URLSearchParams({ u: email, p: password });
-        response = await fetch(`/api/auth/session?${params.toString()}`, {
-          method: 'GET',
-          headers: { 
-            'Accept': 'application/json',
-            'Cache-Control': 'no-cache'
-          },
-        });
+        try {
+          response = await fetch(`/api/auth/session?${params.toString()}`, {
+            method: 'GET',
+            headers: { 
+              'Accept': 'application/json',
+              'Cache-Control': 'no-cache'
+            },
+          });
+        } catch (getErr) {
+          throw new Error('No se pudo contactar con el servidor mediante ningún método.');
+        }
       }
       
       if (response.ok) {

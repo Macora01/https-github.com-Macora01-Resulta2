@@ -13,6 +13,12 @@ export default function App() {
 
   // Check for existing session
   React.useEffect(() => {
+    // Log DB Status for debugging
+    fetch('/api/db-status')
+      .then(r => r.json())
+      .then(data => console.log('📊 Estado de Base de Datos:', data))
+      .catch(err => console.error('❌ Error al verificar DB:', err));
+
     try {
       const savedUser = localStorage.getItem('facore_user');
       if (savedUser) {

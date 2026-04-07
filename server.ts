@@ -45,6 +45,7 @@ async function initDb() {
   
   const client = await pool!.connect();
   try {
+    console.log('✅ Database connected successfully to PostgreSQL');
     await client.query(`
       CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
@@ -76,6 +77,9 @@ async function initDb() {
       await client.query('INSERT INTO users (email, password, role) VALUES ($1, $2, $3)', [adminEmail, hashedPassword, 'admin']);
       console.log('Default admin created');
     }
+  } catch (err) {
+    console.error('❌ Database initialization error:', err);
+    throw err;
   } finally {
     client.release();
   }
@@ -86,6 +90,33 @@ const app = express();
 // 1. Middlewares básicos
 app.use(cors());
 app.use(express.json());
+
+// Endpoint para verificar el estado de la base de datos (Público)
+app.get('/api/db-status', async (req, res) => {
+  try {
+    if (isMockMode) {
+      return res.json({ 
+        status: 'MOCK', 
+        message: 'Corriendo en modo de prueba (sin base de datos real)',
+        database_url_present: false
+      });
+    }
+    
+    const result = await pool!.query('SELECT NOW()');
+    res.json({ 
+      status: 'CONNECTED', 
+      message: 'Conexión exitosa a PostgreSQL',
+      server_time: result.rows[0].now,
+      database_url_present: true
+    });
+  } catch (err) {
+    res.status(500).json({ 
+      status: 'ERROR', 
+      message: 'Error al conectar con PostgreSQL',
+      error: err instanceof Error ? err.message : String(err)
+    });
+  }
+});
 
 // 2. Logging para depuración
 app.use((req, res, next) => {
@@ -226,9 +257,78 @@ apiRouter.post('/financial-data', authenticateToken, async (req, res) => {
 apiRouter.post('/upload-pdf', authenticateToken, upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No se subió ningún archivo' });
   try {
-    const data = await pdf(req.file.buffer);
-    res.json({ text: data.text, message: 'PDF procesado' });
+    const pdfData = await pdf(req.file.buffer);
+    const text = pdfData.text;
+    console.log('PDF Procesado, texto extraído (primeros 200 chars):', text.substring(0, 200));
+
+    // Lógica de extracción (basada en el formato "CUADRO DE RESULTADO")
+    // Buscamos patrones como "Ventas Netas", "Costo de Ventas", "Gastos", "Resultado"
+    // Y también el mes y año
+    
+    const months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+    let year = 2025;
+    let month = 'Enero';
+    let monthIndex = 0;
+
+    // Extraer Año (ej: 2025 o 2026)
+    const yearMatch = text.match(/202[2-9]/);
+    if (yearMatch) year = parseInt(yearMatch[0]);
+
+    // Extraer Mes
+    for (let i = 0; i < months.length; i++) {
+      if (text.toLowerCase().includes(months[i].toLowerCase())) {
+        month = months[i];
+        monthIndex = i;
+        break;
+      }
+    }
+
+    // Función para extraer números después de una etiqueta
+    const extractNumber = (label: string) => {
+      // Busca la etiqueta y luego el primer número que aparezca después (puede haber espacios, símbolos, etc)
+      // Soporta formatos como "Etiqueta: 1.234.567", "Etiqueta 1234567", "Etiqueta... $1.234"
+      const regex = new RegExp(`${label}[^0-9]*([0-9]{1,3}(?:\\.[0-9]{3})*(?:,[0-9]+)?|[0-9]+)`, 'i');
+      const match = text.match(regex);
+      if (match) {
+        // Limpiar puntos de miles y comas decimales
+        let val = match[1].replace(/\./g, '').replace(/,/g, '.');
+        return parseFloat(val);
+      }
+      return 0;
+    };
+
+    const ventasNetas = extractNumber('Ventas Netas') || extractNumber('Ingresos') || extractNumber('Ventas');
+    const costo = extractNumber('Costo de Ventas') || extractNumber('Costo Directo') || extractNumber('Costos');
+    const gastos = extractNumber('Gastos Operativos') || extractNumber('Gastos de Administración') || extractNumber('Gastos');
+    const resultadoMes = extractNumber('Resultado del Mes') || extractNumber('Utilidad del Ejercicio') || extractNumber('Resultado Neto') || extractNumber('Utilidad');
+
+    console.log(`Datos extraídos: ${month} ${year} - Ventas: ${ventasNetas}, Costo: ${costo}, Gastos: ${gastos}, Resultado: ${resultadoMes}`);
+
+    if (ventasNetas === 0 && resultadoMes === 0) {
+      return res.status(422).json({ error: 'No se pudieron extraer datos válidos del PDF. Verifica el formato.' });
+    }
+
+    // Guardar en BD
+    if (isMockMode) {
+      const index = mockFinancialRecords.findIndex(r => r.year === year && r.monthIndex === monthIndex);
+      const newRecord = { year, month, monthIndex, ventasNetas, costo, gastos, resultadoMes };
+      if (index >= 0) mockFinancialRecords[index] = newRecord;
+      else mockFinancialRecords.push(newRecord);
+    } else {
+      await pool!.query(`
+        INSERT INTO financial_records (year, month, month_index, ventas_netas, costo, gastos, resultado_mes)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        ON CONFLICT (year, month_index) DO UPDATE SET
+          ventas_netas = EXCLUDED.ventas_netas,
+          costo = EXCLUDED.costo,
+          gastos = EXCLUDED.gastos,
+          resultado_mes = EXCLUDED.resultado_mes
+      `, [year, month, monthIndex, ventasNetas, costo, gastos, resultadoMes]);
+    }
+
+    res.json({ success: true, data: { year, month, ventasNetas, resultadoMes } });
   } catch (err) {
+    console.error('Error al procesar PDF:', err);
     res.status(500).json({ error: 'Error al procesar PDF' });
   }
 });

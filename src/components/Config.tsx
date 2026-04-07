@@ -17,12 +17,15 @@ export const Config = () => {
   const [isUploading, setIsUploading] = React.useState(false);
   const [uploadStatus, setUploadStatus] = React.useState<'idle' | 'success' | 'error'>('idle');
 
+  const [uploadData, setUploadData] = React.useState<any>(null);
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setIsUploading(true);
     setUploadStatus('idle');
+    setUploadData(null);
 
     const formData = new FormData();
     formData.append('file', file);
@@ -36,6 +39,8 @@ export const Config = () => {
       });
       
       if (response.ok) {
+        const result = await response.json();
+        setUploadData(result.data);
         setUploadStatus('success');
       } else {
         setUploadStatus('error');
@@ -48,7 +53,20 @@ export const Config = () => {
   };
 
   const [users, setUsers] = React.useState<any[]>([]);
+  const [dbStatus, setDbStatus] = React.useState<any>(null);
+
   React.useEffect(() => {
+    const fetchDbStatus = async () => {
+      try {
+        const response = await fetch('/api/db-status');
+        const data = await response.json();
+        setDbStatus(data);
+      } catch (err) {
+        setDbStatus({ status: 'ERROR', message: 'No se pudo obtener el estado' });
+      }
+    };
+    fetchDbStatus();
+
     const fetchUsers = async () => {
       const token = localStorage.getItem('facore_token');
       try {
@@ -68,9 +86,22 @@ export const Config = () => {
 
   return (
     <div className="flex flex-col gap-8">
-      <div>
-        <h1 className="text-3xl font-bold text-primary tracking-tight">Configuración del Sistema</h1>
-        <p className="text-text-light font-medium">Administra usuarios, permisos y carga de datos financieros.</p>
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold text-primary tracking-tight">Configuración del Sistema</h1>
+          <p className="text-text-light font-medium">Administra usuarios, permisos y carga de datos financieros.</p>
+        </div>
+        {dbStatus && (
+          <div className={cn(
+            "px-4 py-2 rounded-xl border flex items-center gap-2 text-xs font-bold",
+            dbStatus.status === 'CONNECTED' ? "bg-success/10 border-success/20 text-success" :
+            dbStatus.status === 'MOCK' ? "bg-warning/10 border-warning/20 text-warning" :
+            "bg-danger/10 border-danger/20 text-danger"
+          )}>
+            <Database size={16} />
+            <span>{dbStatus.message}</span>
+          </div>
+        )}
       </div>
 
       <div className="flex gap-4 border-b border-accent/20">
@@ -199,9 +230,24 @@ export const Config = () => {
             </div>
 
             {uploadStatus === 'success' && (
-              <div className="mt-6 p-4 bg-success/10 border border-success/20 rounded-xl flex items-center gap-3 text-success">
-                <Check size={20} />
-                <span className="text-sm font-bold">Los datos han sido actualizados en la base de datos PostgreSQL.</span>
+              <div className="mt-6 p-6 bg-success/10 border border-success/20 rounded-xl flex flex-col gap-4 text-success">
+                <div className="flex items-center gap-3">
+                  <Check size={20} />
+                  <span className="text-sm font-bold uppercase tracking-widest">¡Archivo procesado con éxito!</span>
+                </div>
+                {uploadData && (
+                  <div className="grid grid-cols-2 gap-4 pt-4 border-t border-success/20">
+                    <div className="flex flex-col">
+                      <span className="text-[10px] uppercase font-bold opacity-70">Periodo</span>
+                      <span className="font-bold text-text">{uploadData.month} {uploadData.year}</span>
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-[10px] uppercase font-bold opacity-70">Ventas</span>
+                      <span className="font-bold text-text">{new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP' }).format(uploadData.ventasNetas)}</span>
+                    </div>
+                  </div>
+                )}
+                <p className="text-xs font-medium mt-2">Los datos han sido actualizados en la base de datos PostgreSQL y ya están disponibles en los reportes.</p>
               </div>
             )}
           </div>
