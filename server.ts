@@ -9,9 +9,8 @@ import jwt from 'jsonwebtoken';
 import multer from 'multer';
 import cors from 'cors';
 import fs from 'fs';
-import { createRequire } from 'module';
-const require = createRequire(import.meta.url);
-const pdf = require('pdf-parse');
+import * as pdfImport from 'pdf-parse';
+const pdf = (pdfImport as any).default || pdfImport;
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -343,7 +342,11 @@ apiRouter.post('/upload-pdf', authenticateToken, upload.single('file'), async (r
   try {
     let pdfData;
     try {
-      pdfData = await pdf(req.file.buffer);
+      const pdfParser = typeof pdf === 'function' ? pdf : (pdf as any).default;
+      if (typeof pdfParser !== 'function') {
+        throw new Error('pdf-parse no se cargó correctamente como función');
+      }
+      pdfData = await pdfParser(req.file.buffer);
     } catch (pdfErr: any) {
       console.error('Error en pdf-parse:', pdfErr);
       return res.status(422).json({ error: `No se pudo leer el archivo PDF. Asegúrate de que sea un archivo válido. (Detalle: ${pdfErr.message})` });
