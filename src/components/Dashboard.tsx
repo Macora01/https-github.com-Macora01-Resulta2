@@ -24,6 +24,7 @@ import {
   ArrowDownRight,
   Filter,
   Download,
+  AlertCircle,
   Table as TableIcon,
   LayoutDashboard as DashboardIcon
 } from 'lucide-react';
@@ -65,7 +66,9 @@ export const Dashboard = () => {
     { id: 'resultadoMes', label: 'Resultado Neto', color: '#6B8E23' },
   ];
 
-  const years = Array.from(new Set(data.map(d => d.year))).sort((a, b) => b - a);
+  const years = React.useMemo(() => 
+    Array.from(new Set(data.map(d => d.year))).sort((a, b) => b - a),
+  [data]);
 
   React.useEffect(() => {
     const fetchData = async () => {
@@ -76,7 +79,14 @@ export const Dashboard = () => {
         });
         if (response.ok) {
           const result = await response.json();
-          if (result.length > 0) setData(result);
+          if (result && result.length > 0) {
+            setData(result);
+            // Seleccionar el año más reciente por defecto si no hay ninguno seleccionado
+            const availableYears = Array.from(new Set(result.map((d: any) => d.year))).sort((a: any, b: any) => b - a);
+            if (availableYears.length > 0) {
+              setSelectedYears([availableYears[0] as number]);
+            }
+          }
         }
       } catch (err) {
         console.error('Error fetching data:', err);
@@ -156,8 +166,10 @@ export const Dashboard = () => {
       comparison.resultado = prevTotals.resultadoMes ? ((currentTotals.resultadoMes - prevTotals.resultadoMes) / prevTotals.resultadoMes) * 100 : 0;
     }
 
-    return { ...currentTotals, comparison, year: lastYear };
+    return { ...currentTotals, comparison, year: lastYear, currentYearData };
   }, [data, selectedYears]);
+
+  const currentYearData = totals.currentYearData;
 
   const COLORS = ['#5f2e0a', '#A0522D', '#dec290', '#6B8E23', '#8B7355', '#7B2D00'];
 
@@ -255,225 +267,237 @@ export const Dashboard = () => {
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard 
-          title={`Ventas Netas (${totals.year})`} 
-          value={totals.ventasNetas} 
-          change={totals.comparison.ventas.toFixed(1)} 
-          isPositive={totals.comparison.ventas >= 0} 
-          icon={TrendingUp} 
-        />
-        <StatCard 
-          title={`Costo de Ventas (${totals.year})`} 
-          value={totals.costo} 
-          change={8.2} 
-          isPositive={false} 
-          icon={TrendingDown} 
-        />
-        <StatCard 
-          title={`Gastos Operativos (${totals.year})`} 
-          value={totals.gastos} 
-          change={3.1} 
-          isPositive={false} 
-          icon={DollarSign} 
-        />
-        <StatCard 
-          title={`Resultado Neto (${totals.year})`} 
-          value={totals.resultadoMes} 
-          change={totals.comparison.resultado.toFixed(1)} 
-          isPositive={totals.comparison.resultado >= 0} 
-          icon={TrendingUp} 
-        />
-      </div>
-
-      {view === 'charts' ? (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Main Area Chart */}
-          <div className="lg:col-span-2 glass-card p-6">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="font-bold text-text text-lg">Evolución Comparativa</h3>
-              <button className="text-primary hover:bg-accent/20 p-2 rounded-lg transition-colors">
-                <Download size={18} />
-              </button>
-            </div>
-            <div className="h-[350px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={comparisonData}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#dec29040" />
-                  <XAxis 
-                    dataKey="name" 
-                    axisLine={false} 
-                    tickLine={false} 
-                    tick={{ fill: '#8D6E63', fontSize: 12 }}
-                    dy={10}
-                  />
-                  <YAxis 
-                    axisLine={false} 
-                    tickLine={false} 
-                    tick={{ fill: '#8D6E63', fontSize: 12 }}
-                    tickFormatter={(value) => `$${(value / 1000000).toFixed(0)}M`}
-                  />
-                  <Tooltip 
-                    contentStyle={{ 
-                      backgroundColor: '#FFFFFF', 
-                      borderRadius: '12px', 
-                      border: 'none', 
-                      boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)' 
-                    }}
-                    formatter={(value: number) => [formatCurrency(value), '']}
-                  />
-                  <Legend verticalAlign="top" align="right" iconType="circle" />
-                  {selectedYears.map((year, yIdx) => (
-                    selectedItems.map((itemId, iIdx) => {
-                      const item = items.find(i => i.id === itemId);
-                      const color = COLORS[(yIdx * selectedItems.length + iIdx) % COLORS.length];
-                      return (
-                        <Area 
-                          key={`${itemId}_${year}`}
-                          type="monotone" 
-                          dataKey={`${itemId}_${year}`} 
-                          name={`${item?.label} (${year})`}
-                          stroke={color} 
-                          strokeWidth={2}
-                          fillOpacity={0.1} 
-                          fill={color} 
-                        />
-                      );
-                    })
-                  ))}
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          {/* Pie Chart */}
-          <div className="glass-card p-6">
-            <h3 className="font-bold text-text text-lg mb-6">Distribución de Costos</h3>
-            <div className="h-[300px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={[
-                      { name: 'Costo de Ventas', value: totals.costo },
-                      { name: 'Gastos Operativos', value: totals.gastos },
-                      { name: 'Resultado Neto', value: totals.resultadoMes },
-                    ]}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={60}
-                    outerRadius={80}
-                    paddingAngle={5}
-                    dataKey="value"
-                  >
-                    {COLORS.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip 
-                    formatter={(value: number) => formatCurrency(value)}
-                  />
-                  <Legend verticalAlign="bottom" iconType="circle" />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-            <div className="mt-4 p-4 bg-accent/10 rounded-xl">
-              <div className="flex justify-between items-center text-sm">
-                <span className="text-text-light font-medium">Margen de Utilidad</span>
-                <span className="text-primary font-bold">
-                  {((totals.resultadoMes / totals.ventasNetas) * 100).toFixed(1)}%
-                </span>
-              </div>
-              <div className="w-full bg-white rounded-full h-2 mt-2">
-                <div 
-                  className="bg-primary h-2 rounded-full" 
-                  style={{ width: `${(totals.resultadoMes / totals.ventasNetas) * 100}%` }}
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Bar Chart Comparison */}
-          <div className="lg:col-span-3 glass-card p-6">
-            <h3 className="font-bold text-text text-lg mb-6">Comparativa Detallada por Periodo</h3>
-            <div className="h-[350px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={comparisonData}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#dec29040" />
-                  <XAxis 
-                    dataKey="name" 
-                    axisLine={false} 
-                    tickLine={false} 
-                    tick={{ fill: '#8D6E63', fontSize: 12 }}
-                  />
-                  <YAxis 
-                    axisLine={false} 
-                    tickLine={false} 
-                    tick={{ fill: '#8D6E63', fontSize: 12 }}
-                    tickFormatter={(value) => `$${(value / 1000000).toFixed(0)}M`}
-                  />
-                  <Tooltip 
-                    contentStyle={{ 
-                      backgroundColor: '#FFFFFF', 
-                      borderRadius: '12px', 
-                      border: 'none', 
-                      boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)' 
-                    }}
-                    formatter={(value: number) => [formatCurrency(value), '']}
-                  />
-                  <Legend verticalAlign="top" align="right" iconType="circle" />
-                  {selectedYears.map((year, yIdx) => (
-                    selectedItems.map((itemId, iIdx) => {
-                      const item = items.find(i => i.id === itemId);
-                      const color = COLORS[(yIdx * selectedItems.length + iIdx) % COLORS.length];
-                      return (
-                        <Bar 
-                          key={`${itemId}_${year}`}
-                          dataKey={`${itemId}_${year}`} 
-                          name={`${item?.label} (${year})`}
-                          fill={color} 
-                          radius={[4, 4, 0, 0]} 
-                        />
-                      );
-                    })
-                  ))}
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
+      {currentYearData.length === 0 ? (
+        <div className="glass-card p-12 text-center flex flex-col items-center gap-4">
+          <AlertCircle size={48} className="text-warning" />
+          <div>
+            <h3 className="text-xl font-bold text-text">No hay datos para el año {totals.year}</h3>
+            <p className="text-text-light mt-2">Carga archivos PDF o ingresa datos manualmente en la sección de Configuración.</p>
           </div>
         </div>
       ) : (
-        <div className="glass-card overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-accent/10 border-b border-accent/20">
-                  <th className="px-6 py-4 text-sm font-bold text-primary uppercase tracking-wider">Periodo</th>
-                  {selectedYears.map(year => (
-                    selectedItems.map(itemId => (
-                      <th key={`${itemId}_${year}`} className="px-6 py-4 text-sm font-bold text-primary uppercase tracking-wider text-right">
-                        {items.find(i => i.id === itemId)?.label} ({year})
-                      </th>
-                    ))
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-accent/10">
-                {comparisonData.map((row, idx) => (
-                  <tr key={idx} className="hover:bg-accent/5 transition-colors">
-                    <td className="px-6 py-4 text-sm font-bold text-text">{row.name}</td>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <StatCard 
+            title={`Ventas Netas (${totals.year})`} 
+            value={totals.ventasNetas} 
+            change={totals.comparison.ventas.toFixed(1)} 
+            isPositive={totals.comparison.ventas >= 0} 
+            icon={TrendingUp} 
+          />
+          <StatCard 
+            title={`Costo de Ventas (${totals.year})`} 
+            value={totals.costo} 
+            change={8.2} 
+            isPositive={false} 
+            icon={TrendingDown} 
+          />
+          <StatCard 
+            title={`Gastos Operativos (${totals.year})`} 
+            value={totals.gastos} 
+            change={3.1} 
+            isPositive={false} 
+            icon={DollarSign} 
+          />
+          <StatCard 
+            title={`Resultado Neto (${totals.year})`} 
+            value={totals.resultadoMes} 
+            change={totals.comparison.resultado.toFixed(1)} 
+            isPositive={totals.comparison.resultado >= 0} 
+            icon={TrendingUp} 
+          />
+        </div>
+      )}
+
+      {currentYearData.length > 0 && (
+        view === 'charts' ? (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Main Area Chart */}
+            <div className="lg:col-span-2 glass-card p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="font-bold text-text text-lg">Evolución Comparativa</h3>
+                <button className="text-primary hover:bg-accent/20 p-2 rounded-lg transition-colors">
+                  <Download size={18} />
+                </button>
+              </div>
+              <div className="h-[350px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={comparisonData}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#dec29040" />
+                    <XAxis 
+                      dataKey="name" 
+                      axisLine={false} 
+                      tickLine={false} 
+                      tick={{ fill: '#8D6E63', fontSize: 12 }}
+                      dy={10}
+                    />
+                    <YAxis 
+                      axisLine={false} 
+                      tickLine={false} 
+                      tick={{ fill: '#8D6E63', fontSize: 12 }}
+                      tickFormatter={(value) => `$${(value / 1000000).toFixed(0)}M`}
+                    />
+                    <Tooltip 
+                      contentStyle={{ 
+                        backgroundColor: '#FFFFFF', 
+                        borderRadius: '12px', 
+                        border: 'none', 
+                        boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)' 
+                      }}
+                      formatter={(value: number) => [formatCurrency(value), '']}
+                    />
+                    <Legend verticalAlign="top" align="right" iconType="circle" />
+                    {selectedYears.map((year, yIdx) => (
+                      selectedItems.map((itemId, iIdx) => {
+                        const item = items.find(i => i.id === itemId);
+                        const color = COLORS[(yIdx * selectedItems.length + iIdx) % COLORS.length];
+                        return (
+                          <Area 
+                            key={`${itemId}_${year}`}
+                            type="monotone" 
+                            dataKey={`${itemId}_${year}`} 
+                            name={`${item?.label} (${year})`}
+                            stroke={color} 
+                            strokeWidth={2}
+                            fillOpacity={0.1} 
+                            fill={color} 
+                          />
+                        );
+                      })
+                    ))}
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* Pie Chart */}
+            <div className="glass-card p-6">
+              <h3 className="font-bold text-text text-lg mb-6">Distribución de Costos</h3>
+              <div className="h-[300px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={[
+                        { name: 'Costo de Ventas', value: totals.costo },
+                        { name: 'Gastos Operativos', value: totals.gastos },
+                        { name: 'Resultado Neto', value: totals.resultadoMes },
+                      ]}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={60}
+                      outerRadius={80}
+                      paddingAngle={5}
+                      dataKey="value"
+                    >
+                      {COLORS.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip 
+                      formatter={(value: number) => formatCurrency(value)}
+                    />
+                    <Legend verticalAlign="bottom" iconType="circle" />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="mt-4 p-4 bg-accent/10 rounded-xl">
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-text-light font-medium">Margen de Utilidad</span>
+                  <span className="text-primary font-bold">
+                    {((totals.resultadoMes / totals.ventasNetas) * 100).toFixed(1)}%
+                  </span>
+                </div>
+                <div className="w-full bg-white rounded-full h-2 mt-2">
+                  <div 
+                    className="bg-primary h-2 rounded-full" 
+                    style={{ width: `${(totals.resultadoMes / totals.ventasNetas) * 100}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Bar Chart Comparison */}
+            <div className="lg:col-span-3 glass-card p-6">
+              <h3 className="font-bold text-text text-lg mb-6">Comparativa Detallada por Periodo</h3>
+              <div className="h-[350px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={comparisonData}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#dec29040" />
+                    <XAxis 
+                      dataKey="name" 
+                      axisLine={false} 
+                      tickLine={false} 
+                      tick={{ fill: '#8D6E63', fontSize: 12 }}
+                    />
+                    <YAxis 
+                      axisLine={false} 
+                      tickLine={false} 
+                      tick={{ fill: '#8D6E63', fontSize: 12 }}
+                      tickFormatter={(value) => `$${(value / 1000000).toFixed(0)}M`}
+                    />
+                    <Tooltip 
+                      contentStyle={{ 
+                        backgroundColor: '#FFFFFF', 
+                        borderRadius: '12px', 
+                        border: 'none', 
+                        boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)' 
+                      }}
+                      formatter={(value: number) => [formatCurrency(value), '']}
+                    />
+                    <Legend verticalAlign="top" align="right" iconType="circle" />
+                    {selectedYears.map((year, yIdx) => (
+                      selectedItems.map((itemId, iIdx) => {
+                        const item = items.find(i => i.id === itemId);
+                        const color = COLORS[(yIdx * selectedItems.length + iIdx) % COLORS.length];
+                        return (
+                          <Bar 
+                            key={`${itemId}_${year}`}
+                            dataKey={`${itemId}_${year}`} 
+                            name={`${item?.label} (${year})`}
+                            fill={color} 
+                            radius={[4, 4, 0, 0]} 
+                          />
+                        );
+                      })
+                    ))}
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="glass-card overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-accent/10 border-b border-accent/20">
+                    <th className="px-6 py-4 text-sm font-bold text-primary uppercase tracking-wider">Periodo</th>
                     {selectedYears.map(year => (
                       selectedItems.map(itemId => (
-                        <td key={`${itemId}_${year}`} className="px-6 py-4 text-sm text-text text-right font-medium">
-                          {formatCurrency(row[`${itemId}_${year}`])}
-                        </td>
+                        <th key={`${itemId}_${year}`} className="px-6 py-4 text-sm font-bold text-primary uppercase tracking-wider text-right">
+                          {items.find(i => i.id === itemId)?.label} ({year})
+                        </th>
                       ))
                     ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-accent/10">
+                  {comparisonData.map((row, idx) => (
+                    <tr key={idx} className="hover:bg-accent/5 transition-colors">
+                      <td className="px-6 py-4 text-sm font-bold text-text">{row.name}</td>
+                      {selectedYears.map(year => (
+                        selectedItems.map(itemId => (
+                          <td key={`${itemId}_${year}`} className="px-6 py-4 text-sm text-text text-right font-medium">
+                            {formatCurrency(row[`${itemId}_${year}`])}
+                          </td>
+                        ))
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
+        )
       )}
     </div>
   );

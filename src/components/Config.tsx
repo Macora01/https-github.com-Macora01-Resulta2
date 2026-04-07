@@ -42,11 +42,15 @@ export const Config = () => {
         const result = await response.json();
         setUploadData(result.data);
         setUploadStatus('success');
+        alert(`✅ PDF procesado con éxito:\n\nPeriodo: ${result.data.month} ${result.data.year}\nVentas: ${new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP' }).format(result.data.ventasNetas)}\nResultado: ${new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP' }).format(result.data.resultadoMes)}`);
       } else {
+        const errorData = await response.json().catch(() => ({ error: 'Error desconocido' }));
         setUploadStatus('error');
+        alert(`❌ Error al procesar PDF: ${errorData.error || 'Verifica el formato del archivo'}`);
       }
     } catch (err) {
       setUploadStatus('error');
+      alert('❌ Error de conexión al subir el archivo');
     } finally {
       setIsUploading(false);
     }

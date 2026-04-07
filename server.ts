@@ -358,9 +358,10 @@ apiRouter.post('/upload-pdf', authenticateToken, upload.single('file'), async (r
     const yearMatch = text.match(/202[2-9]/);
     if (yearMatch) year = parseInt(yearMatch[0]);
 
-    // Extraer Mes
+    // Extraer Mes (buscando palabra completa para evitar falsos positivos)
     for (let i = 0; i < months.length; i++) {
-      if (text.toLowerCase().includes(months[i].toLowerCase())) {
+      const monthRegex = new RegExp(`\\b${months[i]}\\b`, 'i');
+      if (monthRegex.test(text)) {
         month = months[i];
         monthIndex = i;
         break;
@@ -370,21 +371,23 @@ apiRouter.post('/upload-pdf', authenticateToken, upload.single('file'), async (r
     // Función para extraer números después de una etiqueta
     const extractNumber = (label: string) => {
       // Busca la etiqueta y luego el primer número que aparezca después (puede haber espacios, símbolos, etc)
-      // Soporta formatos como "Etiqueta: 1.234.567", "Etiqueta 1234567", "Etiqueta... $1.234"
-      const regex = new RegExp(`${label}[^0-9]*([0-9]{1,3}(?:\\.[0-9]{3})*(?:,[0-9]+)?|[0-9]+)`, 'i');
+      // Intentamos ignorar años (2020-2029) si están justo después de la etiqueta
+      const regex = new RegExp(`${label}[^0-9]*(?:202[0-9][^0-9]+)*([0-9]{1,3}(?:\\.[0-9]{3})*(?:,[0-9]+)?|[0-9]{4,})`, 'i');
       const match = text.match(regex);
       if (match) {
         // Limpiar puntos de miles y comas decimales
         let val = match[1].replace(/\./g, '').replace(/,/g, '.');
-        return parseFloat(val);
+        const num = parseFloat(val);
+        console.log(`🔍 Extracción para "${label}": Encontrado "${match[1]}" -> ${num}`);
+        return num;
       }
-      return 0;
+      return null;
     };
 
-    const ventasNetas = extractNumber('Ventas Netas') || extractNumber('Ingresos') || extractNumber('Ventas');
-    const costo = extractNumber('Costo de Ventas') || extractNumber('Costo Directo') || extractNumber('Costos');
-    const gastos = extractNumber('Gastos Operativos') || extractNumber('Gastos de Administración') || extractNumber('Gastos');
-    const resultadoMes = extractNumber('Resultado del Mes') || extractNumber('Utilidad del Ejercicio') || extractNumber('Resultado Neto') || extractNumber('Utilidad');
+    const ventasNetas = extractNumber('Ventas Netas') ?? extractNumber('Ingresos de Actividades Ordinarias') ?? extractNumber('Ingresos Operacionales') ?? extractNumber('Ingresos') ?? extractNumber('Ventas') ?? 0;
+    const costo = extractNumber('Costo de Ventas') ?? extractNumber('Costo Directo') ?? extractNumber('Costos de Explotación') ?? extractNumber('Costos') ?? 0;
+    const gastos = extractNumber('Gastos Operativos') ?? extractNumber('Gastos de Administración') ?? extractNumber('Gastos de Ventas') ?? extractNumber('Gastos') ?? 0;
+    const resultadoMes = extractNumber('Resultado del Mes') ?? extractNumber('Resultado antes de Impuestos') ?? extractNumber('Utilidad del Ejercicio') ?? extractNumber('Resultado Neto') ?? extractNumber('Utilidad (Pérdida)') ?? extractNumber('Utilidad') ?? 0;
 
     console.log(`Datos extraídos: ${month} ${year} - Ventas: ${ventasNetas}, Costo: ${costo}, Gastos: ${gastos}, Resultado: ${resultadoMes}`);
 
