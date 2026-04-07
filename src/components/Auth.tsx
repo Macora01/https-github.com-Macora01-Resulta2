@@ -5,26 +5,6 @@ export const Auth = ({ onLogin }: { onLogin: (user: any) => void }) => {
   const [email, setEmail] = React.useState('');
   const [password, setPassword] = React.useState('');
   const [isLoading, setIsLoading] = React.useState(false);
-  const [diagInfo, setDiagInfo] = React.useState<string | null>(null);
-
-  const checkConnection = async () => {
-    setDiagInfo("Verificando...");
-    try {
-      const res = await fetch('/health', { method: 'GET', cache: 'no-store' });
-      const servedBy = res.headers.get('X-Served-By');
-      const contentType = res.headers.get('Content-Type');
-      
-      if (servedBy === 'NodeJS-Express') {
-        setDiagInfo("✅ Conexión con Node.js exitosa.");
-      } else if (contentType?.includes('text/html')) {
-        setDiagInfo("❌ ERROR: Nginx está interceptando la ruta. Configura Coolify como 'Node.js App' y puerto 3000.");
-      } else {
-        setDiagInfo(`⚠️ Respuesta desconocida de: ${res.headers.get('Server') || 'Servidor desconocido'}`);
-      }
-    } catch (e) {
-      setDiagInfo("❌ No se pudo contactar con el servidor.");
-    }
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -95,12 +75,6 @@ export const Auth = ({ onLogin }: { onLogin: (user: any) => void }) => {
     }
   };
 
-  const handleDemoLogin = () => {
-    const demoUser = { email: 'demo@facore.cl', role: 'admin' };
-    localStorage.setItem('facore_token', 'demo-token');
-    onLogin(demoUser);
-  };
-
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <div className="w-full max-w-md animate-in fade-in zoom-in duration-500">
@@ -120,11 +94,6 @@ export const Auth = ({ onLogin }: { onLogin: (user: any) => void }) => {
         )}
 
         <div className="glass-card p-8">
-          {diagInfo && (
-            <div className={`mb-4 p-3 rounded-lg text-xs font-mono ${diagInfo.includes('✅') ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
-              {diagInfo}
-            </div>
-          )}
           <form onSubmit={handleSubmit} className="flex flex-col gap-6">
             <div className="flex flex-col gap-2">
               <label className="text-sm font-bold text-text ml-1">Correo Electrónico</label>

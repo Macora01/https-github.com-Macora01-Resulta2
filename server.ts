@@ -9,8 +9,7 @@ import jwt from 'jsonwebtoken';
 import multer from 'multer';
 import cors from 'cors';
 import fs from 'fs';
-import * as pdfImport from 'pdf-parse';
-const pdf = (pdfImport as any).default || pdfImport;
+import { PDFParse } from 'pdf-parse';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -78,6 +77,16 @@ async function initDb() {
           resultado_mes NUMERIC NOT NULL,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           UNIQUE(year, month_index)
+        );
+
+        CREATE TABLE IF NOT EXISTS goals (
+          id SERIAL PRIMARY KEY,
+          title TEXT NOT NULL,
+          target NUMERIC NOT NULL,
+          current NUMERIC NOT NULL,
+          type TEXT NOT NULL,
+          status TEXT NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
       `);
 
@@ -153,6 +162,46 @@ app.use((req, res, next) => {
 });
 
 // 2. Montar el router de la API INMEDIATAMENTE
+// Rutas para Metas (Planning)
+apiRouter.get('/goals', async (req, res) => {
+  if (isMockMode) {
+    return res.json([]);
+  }
+  try {
+    const result = await pool!.query('SELECT * FROM goals ORDER BY created_at DESC');
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: 'Error al obtener metas' });
+  }
+});
+
+apiRouter.post('/goals', async (req, res) => {
+  const { title, target, current, type, status } = req.body;
+  if (isMockMode) {
+    return res.json({ id: Date.now(), title, target, current, type, status });
+  }
+  try {
+    const result = await pool!.query(
+      'INSERT INTO goals (title, target, current, type, status) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+      [title, target, current, type, status]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: 'Error al crear meta' });
+  }
+});
+
+apiRouter.delete('/goals/:id', async (req, res) => {
+  const { id } = req.params;
+  if (isMockMode) return res.json({ success: true });
+  try {
+    await pool!.query('DELETE FROM goals WHERE id = $1', [id]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Error al eliminar meta' });
+  }
+});
+
 app.use('/api', apiRouter);
 
 // Rutas de diagnóstico directo en la app
@@ -337,32 +386,41 @@ apiRouter.post('/financial-data', authenticateToken, async (req, res) => {
   }
 });
 
+let lastExtractedText = '';
+
+apiRouter.get('/debug/pdf-text', (req, res) => {
+  res.send(`<pre>${lastExtractedText}</pre>`);
+});
+
 apiRouter.post('/upload-pdf', authenticateToken, upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No se subió ningún archivo' });
   try {
     let pdfData;
     try {
-      const pdfParser = typeof pdf === 'function' ? pdf : (pdf as any).default;
-      if (typeof pdfParser !== 'function') {
-        throw new Error('pdf-parse no se cargó correctamente como función');
-      }
-      pdfData = await pdfParser(req.file.buffer);
+      const parser = new PDFParse({ data: req.file.buffer });
+      pdfData = await parser.getText();
     } catch (pdfErr: any) {
       console.error('Error en pdf-parse:', pdfErr);
       return res.status(422).json({ error: `No se pudo leer el archivo PDF. Asegúrate de que sea un archivo válido. (Detalle: ${pdfErr.message})` });
     }
     const text = pdfData.text;
+    lastExtractedText = text;
     if (!text || text.trim().length === 0) {
+      console.error('❌ PDF sin texto extraíble');
       return res.status(422).json({ error: 'El PDF no contiene texto extraíble. Asegúrate de que no sea una imagen escaneada sin OCR.' });
     }
-    console.log('PDF Procesado, texto extraído (primeros 200 chars):', text.substring(0, 200));
+    console.log('📄 PDF Procesado. Longitud texto:', text.length);
+    console.log('🔍 Primeros 500 caracteres del PDF:\n', text.substring(0, 500));
 
     // Lógica de extracción (basada en el formato "CUADRO DE RESULTADO")
     const months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
     
+    // Normalizar texto para búsqueda
+    const upperText = text.toUpperCase();
+    
     // 1. Detectar si es un "CUADRO DE RESULTADO" (formato tabla multi-año)
-    if (text.toUpperCase().includes('CUADRO DE RESULTADO')) {
-      console.log('📊 Detectado formato CUADRO DE RESULTADO (Multi-año)');
+    if (upperText.includes('CUADRO DE RESULTADO') || upperText.includes('ESTADO DE RESULTADO')) {
+      console.log('📊 Detectado formato de Tabla de Resultados');
       const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
       
       // Encontrar años en la cabecera
@@ -392,6 +450,7 @@ apiRouter.post('/upload-pdf', authenticateToken, upload.single('file'), async (r
             const mUpper = m.toUpperCase();
             if (upperLine === mUpper) return true;
             if (mUpper === 'OCTUBRE' && upperLine === 'OCUBRE') return true;
+            if (mUpper === 'SEPTIEMBRE' && upperLine === 'SETIEMBRE') return true;
             // Si la línea es solo el mes o empieza por el mes seguido de espacio
             if (upperLine.startsWith(mUpper + ' ') || upperLine.startsWith(mUpper + '\t')) return true;
             return false;
@@ -400,6 +459,27 @@ apiRouter.post('/upload-pdf', authenticateToken, upload.single('file'), async (r
           if (mIdx >= 0) {
             currentMonthName = months[mIdx];
             currentMonthIdx = mIdx;
+            console.log(`📍 Procesando mes: ${currentMonthName}`);
+            
+            // Buscar la línea de datos (suele ser la siguiente o estar en la misma)
+            // En este formato, los valores de ventas, costos, etc suelen venir en líneas separadas o agrupados
+            // Intentamos buscar bloques de números
+            let dataLine = '';
+            let foundData = false;
+            
+            // Mirar las siguientes 10 líneas para encontrar los valores
+            for (let j = 1; j <= 10 && (i + j) < lines.length; j++) {
+              const nextLine = lines[i + j];
+              // Si encontramos otro mes, paramos
+              if (months.some(m => nextLine.toUpperCase().startsWith(m.toUpperCase()))) break;
+              
+              const numbers = nextLine.match(/-?\d+[\d.,]*/g);
+              if (numbers && numbers.length >= years.length) {
+                // Podría ser una línea de datos
+                console.log(`🔢 Línea de datos potencial para ${currentMonthName}:`, nextLine);
+                // Aquí la lógica se vuelve compleja porque depende de qué fila estamos (Ventas, Costos, etc)
+              }
+            }
             continue;
           }
 
@@ -525,10 +605,10 @@ apiRouter.post('/upload-pdf', authenticateToken, upload.single('file'), async (r
     const gastos = extractNumber('Gastos Operativos') ?? extractNumber('Gastos de Administración') ?? extractNumber('Gastos de Ventas') ?? extractNumber('Gastos') ?? 0;
     const resultadoMes = extractNumber('Resultado del Mes') ?? extractNumber('Resultado antes de Impuestos') ?? extractNumber('Utilidad del Ejercicio') ?? extractNumber('Resultado Neto') ?? extractNumber('Utilidad (Pérdida)') ?? extractNumber('Utilidad') ?? 0;
 
-    console.log(`Datos extraídos: ${month} ${year} - Ventas: ${ventasNetas}, Costo: ${costo}, Gastos: ${gastos}, Resultado: ${resultadoMes}`);
+    console.log(`📊 Fallback results: ${month} ${year} - Ventas: ${ventasNetas}, Costo: ${costo}, Gastos: ${gastos}, Resultado: ${resultadoMes}`);
 
     if (ventasNetas === 0 && resultadoMes === 0) {
-      return res.status(422).json({ error: 'No se pudieron extraer datos válidos del PDF. Verifica el formato.' });
+      return res.status(422).json({ error: 'No se pudo extraer información financiera válida del PDF. Verifica el formato.' });
     }
 
     // Guardar en BD

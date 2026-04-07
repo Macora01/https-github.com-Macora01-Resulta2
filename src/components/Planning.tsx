@@ -14,19 +14,33 @@ import { formatCurrency, cn } from '../lib/utils';
 import { financialData } from '../data/financialData';
 
 export const Planning = () => {
-  const [goals, setGoals] = React.useState([
-    { id: 1, title: 'Incrementar Ventas Q2', target: 150000000, current: 125000000, status: 'in-progress' },
-    { id: 2, title: 'Reducir Gastos Operativos', target: 50000000, current: 55000000, status: 'warning' },
-    { id: 3, title: 'Margen de Utilidad > 20%', target: 20, current: 21.5, status: 'completed' },
-  ]);
+  const [goals, setGoals] = React.useState<any[]>([]);
+  const [isLoading, setIsLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    fetchGoals();
+  }, []);
+
+  const fetchGoals = async () => {
+    try {
+      const response = await fetch('/api/goals');
+      if (response.ok) {
+        const data = await response.json();
+        setGoals(data);
+      }
+    } catch (err) {
+      console.error('Error fetching goals:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const [showGoalModal, setShowGoalModal] = React.useState(false);
   const [newGoal, setNewGoal] = React.useState({ title: '', target: '', current: '', type: 'currency' });
   const [showDetailModal, setShowDetailModal] = React.useState<any>(null);
 
-  const handleAddGoal = (e: React.FormEvent) => {
+  const handleAddGoal = async (e: React.FormEvent) => {
     e.preventDefault();
-    const id = goals.length + 1;
     const targetNum = Number(newGoal.target);
     const currentNum = Number(newGoal.current);
     
@@ -38,15 +52,39 @@ export const Planning = () => {
       if (currentNum >= targetNum) status = 'completed';
     }
 
-    setGoals([...goals, { 
-      id, 
-      title: newGoal.title, 
-      target: targetNum, 
-      current: currentNum, 
-      status 
-    }]);
-    setShowGoalModal(false);
-    setNewGoal({ title: '', target: '', current: '', type: 'currency' });
+    try {
+      const response = await fetch('/api/goals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          title: newGoal.title, 
+          target: targetNum, 
+          current: currentNum, 
+          type: newGoal.type,
+          status 
+        }),
+      });
+
+      if (response.ok) {
+        fetchGoals();
+        setShowGoalModal(false);
+        setNewGoal({ title: '', target: '', current: '', type: 'currency' });
+      }
+    } catch (err) {
+      console.error('Error adding goal:', err);
+    }
+  };
+
+  const handleDeleteGoal = async (id: number) => {
+    if (!confirm('¿Estás seguro de eliminar esta meta?')) return;
+    try {
+      const response = await fetch(`/api/goals/${id}`, { method: 'DELETE' });
+      if (response.ok) {
+        fetchGoals();
+      }
+    } catch (err) {
+      console.error('Error deleting goal:', err);
+    }
   };
 
   return (
@@ -67,8 +105,24 @@ export const Planning = () => {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {goals.map((goal) => (
-          <div key={goal.id} className="glass-card p-6 flex flex-col gap-4">
+        {isLoading ? (
+          <div className="col-span-full flex items-center justify-center p-12">
+            <Loader2 className="animate-spin text-primary" size={48} />
+          </div>
+        ) : goals.length === 0 ? (
+          <div className="col-span-full glass-card p-12 text-center">
+            <Target className="mx-auto text-accent mb-4" size={48} />
+            <h3 className="text-xl font-bold text-text">No hay metas establecidas</h3>
+            <p className="text-text-light mt-2">Haz clic en "Nueva Meta" para comenzar.</p>
+          </div>
+        ) : goals.map((goal) => (
+          <div key={goal.id} className="glass-card p-6 flex flex-col gap-4 relative group">
+            <button 
+              onClick={() => handleDeleteGoal(goal.id)}
+              className="absolute top-4 right-4 p-1 text-danger opacity-0 group-hover:opacity-100 transition-opacity hover:bg-danger/10 rounded"
+            >
+              <X size={16} />
+            </button>
             <div className="flex items-center justify-between">
               <div className={cn(
                 "p-2 rounded-lg",
@@ -90,14 +144,14 @@ export const Planning = () => {
             <div>
               <h3 className="font-bold text-text text-lg">{goal.title}</h3>
               <p className="text-text-light text-sm font-medium mt-1">
-                {goal.id === 3 ? `Meta: ${goal.target}%` : `Meta: ${formatCurrency(goal.target)}`}
+                {goal.type === 'percentage' ? `Meta: ${goal.target}%` : `Meta: ${formatCurrency(goal.target)}`}
               </p>
             </div>
 
             <div className="flex flex-col gap-2">
               <div className="flex justify-between text-xs font-bold text-text-light">
                 <span>Progreso</span>
-                <span>{goal.id === 3 ? `${goal.current}%` : `${((goal.current / goal.target) * 100).toFixed(1)}%`}</span>
+                <span>{goal.type === 'percentage' ? `${goal.current}%` : `${((goal.current / goal.target) * 100).toFixed(1)}%`}</span>
               </div>
               <div className="w-full bg-accent/10 rounded-full h-2">
                 <div 
@@ -106,7 +160,7 @@ export const Planning = () => {
                     goal.status === 'completed' ? "bg-success" :
                     goal.status === 'warning' ? "bg-danger" : "bg-primary"
                   )}
-                  style={{ width: `${Math.min(100, goal.id === 3 ? (goal.current / goal.target) * 100 : (goal.current / goal.target) * 100)}%` }}
+                  style={{ width: `${Math.min(100, (goal.current / goal.target) * 100)}%` }}
                 />
               </div>
             </div>
