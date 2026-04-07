@@ -5,7 +5,10 @@ import {
   AlertCircle, 
   CheckCircle2,
   Calendar,
-  Plus
+  Plus,
+  X,
+  Check,
+  Loader2
 } from 'lucide-react';
 import { formatCurrency, cn } from '../lib/utils';
 import { financialData } from '../data/financialData';
@@ -17,6 +20,35 @@ export const Planning = () => {
     { id: 3, title: 'Margen de Utilidad > 20%', target: 20, current: 21.5, status: 'completed' },
   ]);
 
+  const [showGoalModal, setShowGoalModal] = React.useState(false);
+  const [newGoal, setNewGoal] = React.useState({ title: '', target: '', current: '', type: 'currency' });
+  const [showDetailModal, setShowDetailModal] = React.useState<any>(null);
+
+  const handleAddGoal = (e: React.FormEvent) => {
+    e.preventDefault();
+    const id = goals.length + 1;
+    const targetNum = Number(newGoal.target);
+    const currentNum = Number(newGoal.current);
+    
+    let status = 'in-progress';
+    if (newGoal.type === 'currency') {
+      if (currentNum >= targetNum) status = 'completed';
+      else if (currentNum < targetNum * 0.5) status = 'warning';
+    } else {
+      if (currentNum >= targetNum) status = 'completed';
+    }
+
+    setGoals([...goals, { 
+      id, 
+      title: newGoal.title, 
+      target: targetNum, 
+      current: currentNum, 
+      status 
+    }]);
+    setShowGoalModal(false);
+    setNewGoal({ title: '', target: '', current: '', type: 'currency' });
+  };
+
   return (
     <div className="flex flex-col gap-8">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -25,7 +57,10 @@ export const Planning = () => {
           <p className="text-text-light font-medium">Establece metas y monitorea el progreso de tus objetivos.</p>
         </div>
         
-        <button className="btn-primary flex items-center gap-2">
+        <button 
+          onClick={() => setShowGoalModal(true)}
+          className="btn-primary flex items-center gap-2"
+        >
           <Plus size={18} />
           Nueva Meta
         </button>
@@ -95,11 +130,149 @@ export const Planning = () => {
                 <p className="text-xs font-bold text-text-light uppercase tracking-widest">{item.date}</p>
                 <h4 className="font-bold text-text">{item.event}</h4>
               </div>
-              <button className="text-primary font-bold text-sm hover:underline">Ver detalles</button>
+              <button 
+                onClick={() => setShowDetailModal(item)}
+                className="text-primary font-bold text-sm hover:underline"
+              >
+                Ver detalles
+              </button>
             </div>
           ))}
         </div>
       </div>
+
+      {/* Modal Nueva Meta */}
+      {showGoalModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl animate-in fade-in zoom-in duration-200">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-2xl font-bold text-primary flex items-center gap-2">
+                <Target size={24} />
+                Nueva Meta
+              </h3>
+              <button onClick={() => setShowGoalModal(false)} className="text-text-light hover:text-text">
+                <X size={24} />
+              </button>
+            </div>
+            <form onSubmit={handleAddGoal} className="flex flex-col gap-4">
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-bold text-text-light uppercase">Título de la Meta</label>
+                <input 
+                  type="text" 
+                  required
+                  className="input-field"
+                  placeholder="Ej: Incrementar Ventas Q3"
+                  value={newGoal.title}
+                  onChange={(e) => setNewGoal({ ...newGoal, title: e.target.value })}
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-bold text-text-light uppercase">Tipo de Meta</label>
+                <select 
+                  className="input-field"
+                  value={newGoal.type}
+                  onChange={(e) => setNewGoal({ ...newGoal, type: e.target.value })}
+                >
+                  <option value="currency">Monetaria ($)</option>
+                  <option value="percentage">Porcentaje (%)</option>
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-bold text-text-light uppercase">Objetivo</label>
+                  <input 
+                    type="number" 
+                    required
+                    className="input-field"
+                    placeholder="0"
+                    value={newGoal.target}
+                    onChange={(e) => setNewGoal({ ...newGoal, target: e.target.value })}
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-bold text-text-light uppercase">Actual</label>
+                  <input 
+                    type="number" 
+                    required
+                    className="input-field"
+                    placeholder="0"
+                    value={newGoal.current}
+                    onChange={(e) => setNewGoal({ ...newGoal, current: e.target.value })}
+                  />
+                </div>
+              </div>
+              <div className="flex gap-4 mt-4">
+                <button 
+                  type="button"
+                  onClick={() => setShowGoalModal(false)}
+                  className="flex-1 py-3 px-4 bg-accent/10 text-text font-bold rounded-xl hover:bg-accent/20 transition-all"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  type="submit"
+                  className="flex-1 btn-primary flex items-center justify-center gap-2"
+                >
+                  <Check size={18} />
+                  Crear Meta
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Detalles Hito */}
+      {showDetailModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl animate-in fade-in zoom-in duration-200">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-2xl font-bold text-primary flex items-center gap-2">
+                <Calendar size={24} />
+                Detalles del Hito
+              </h3>
+              <button onClick={() => setShowDetailModal(null)} className="text-text-light hover:text-text">
+                <X size={24} />
+              </button>
+            </div>
+            <div className="flex flex-col gap-4">
+              <div className="p-4 bg-accent/5 rounded-2xl border border-accent/10">
+                <p className="text-xs font-bold text-text-light uppercase tracking-widest mb-1">{showDetailModal.date}</p>
+                <h4 className="text-xl font-bold text-text mb-2">{showDetailModal.event}</h4>
+                <p className="text-text-light text-sm leading-relaxed">
+                  Este hito representa un punto crítico en la planificación estratégica de Facore para el año 2026. 
+                  Se requiere la participación de los responsables de área para asegurar el cumplimiento de los objetivos.
+                </p>
+              </div>
+              
+              <div className="flex flex-col gap-2">
+                <h5 className="font-bold text-text text-sm">Tareas Pendientes:</h5>
+                <ul className="flex flex-col gap-2">
+                  <li className="flex items-center gap-2 text-sm text-text-light">
+                    <div className="w-2 h-2 bg-primary rounded-full" />
+                    Revisión de informes financieros
+                  </li>
+                  <li className="flex items-center gap-2 text-sm text-text-light">
+                    <div className="w-2 h-2 bg-primary rounded-full" />
+                    Validación de presupuestos por departamento
+                  </li>
+                  <li className="flex items-center gap-2 text-sm text-text-light">
+                    <div className="w-2 h-2 bg-primary rounded-full" />
+                    Presentación a la directiva
+                  </li>
+                </ul>
+              </div>
+
+              <button 
+                onClick={() => setShowDetailModal(null)}
+                className="btn-primary w-full mt-4"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

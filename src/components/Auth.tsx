@@ -172,35 +172,6 @@ export const Auth = ({ onLogin }: { onLogin: (user: any) => void }) => {
             </button>
           </form>
 
-          <div className="mt-4 flex flex-col gap-2">
-            <button 
-              onClick={handleDemoLogin}
-              className="w-full py-2 border-2 border-primary/20 text-primary font-bold rounded-lg hover:bg-primary/5 transition-all flex items-center justify-center gap-2"
-            >
-              <Play size={16} />
-              Acceso Demo (Sin Base de Datos)
-            </button>
-
-            <button
-              type="button"
-              onClick={checkConnection}
-              className="w-full py-2 bg-primary/5 text-primary font-bold rounded-lg hover:bg-primary/10 transition-all text-xs uppercase tracking-widest border border-primary/10"
-            >
-              Verificar Conexión con Servidor
-            </button>
-            
-            <button 
-              onClick={() => {
-                const adminUser = { email: 'admin@facore.cl', role: 'admin' };
-                localStorage.setItem('facore_token', 'bypass-token');
-                onLogin(adminUser);
-              }}
-              className="w-full py-2 bg-accent/10 text-accent font-bold rounded-lg hover:bg-accent/20 transition-all text-xs uppercase tracking-widest"
-            >
-              Entrar Directo (Modo Emergencia)
-            </button>
-          </div>
-
           <div className="mt-8 pt-6 border-t border-accent/20 text-center">
             <p className="text-xs text-text-light font-medium uppercase tracking-widest">
               Acceso Restringido • Facore 2026
