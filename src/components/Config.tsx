@@ -54,6 +54,103 @@ export const Config = () => {
 
   const [users, setUsers] = React.useState<any[]>([]);
   const [dbStatus, setDbStatus] = React.useState<any>(null);
+  
+  // Estados para nuevo usuario
+  const [showUserModal, setShowUserModal] = React.useState(false);
+  const [newUser, setNewUser] = React.useState({ email: '', password: '', role: 'visor' });
+  const [isCreatingUser, setIsCreatingUser] = React.useState(false);
+
+  // Estados para carga manual
+  const [manualData, setManualData] = React.useState({
+    year: 2026,
+    month: 'Abril',
+    ventasNetas: '',
+    costo: '',
+    gastos: ''
+  });
+  const [isSavingManual, setIsSavingManual] = React.useState(false);
+
+  const fetchUsers = async () => {
+    const token = localStorage.getItem('facore_token');
+    try {
+      const response = await fetch('/api/users', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setUsers(data);
+      }
+    } catch (err) {
+      console.error('Error fetching users:', err);
+    }
+  };
+
+  const handleCreateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsCreatingUser(true);
+    const token = localStorage.getItem('facore_token');
+    try {
+      const response = await fetch('/api/users', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}` 
+        },
+        body: JSON.stringify(newUser)
+      });
+      if (response.ok) {
+        setShowUserModal(false);
+        setNewUser({ email: '', password: '', role: 'visor' });
+        fetchUsers();
+      } else {
+        alert('Error al crear usuario');
+      }
+    } catch (err) {
+      alert('Error de conexión');
+    } finally {
+      setIsCreatingUser(false);
+    }
+  };
+
+  const handleManualSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSavingManual(true);
+    const token = localStorage.getItem('facore_token');
+    
+    const months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+    const monthIndex = months.indexOf(manualData.month);
+    
+    const payload = {
+      year: Number(manualData.year),
+      month: manualData.month,
+      monthIndex,
+      ventasNetas: Number(manualData.ventasNetas),
+      costo: Number(manualData.costo),
+      gastos: Number(manualData.gastos),
+      resultadoMes: Number(manualData.ventasNetas) - Number(manualData.costo) - Number(manualData.gastos)
+    };
+
+    try {
+      const response = await fetch('/api/financial-data', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}` 
+        },
+        body: JSON.stringify(payload)
+      });
+      if (response.ok) {
+        alert('Datos guardados correctamente');
+        setManualData({ ...manualData, ventasNetas: '', costo: '', gastos: '' });
+      } else {
+        alert('Error al guardar datos');
+      }
+    } catch (err) {
+      alert('Error de conexión');
+    } finally {
+      setIsSavingManual(false);
+    }
+  };
 
   React.useEffect(() => {
     const fetchDbStatus = async () => {
@@ -145,7 +242,10 @@ export const Config = () => {
                 <Users size={24} className="text-primary" />
                 Usuarios Activos
               </h3>
-              <button className="btn-primary flex items-center gap-2 text-sm">
+              <button 
+                onClick={() => setShowUserModal(true)}
+                className="btn-primary flex items-center gap-2 text-sm"
+              >
                 <UserPlus size={18} />
                 Nuevo Usuario
               </button>
@@ -267,41 +367,142 @@ export const Config = () => {
               <Database size={24} className="text-primary" />
               Carga Manual de Datos
             </h3>
-            <form className="flex flex-col gap-4">
+            <form onSubmit={handleManualSave} className="flex flex-col gap-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="flex flex-col gap-1">
                   <label className="text-xs font-bold text-text-light uppercase">Año</label>
-                  <select className="input-field">
-                    <option>2026</option>
-                    <option>2027</option>
+                  <select 
+                    className="input-field"
+                    value={manualData.year}
+                    onChange={(e) => setManualData({ ...manualData, year: Number(e.target.value) })}
+                  >
+                    <option value="2024">2024</option>
+                    <option value="2025">2025</option>
+                    <option value="2026">2026</option>
+                    <option value="2027">2027</option>
                   </select>
                 </div>
                 <div className="flex flex-col gap-1">
                   <label className="text-xs font-bold text-text-light uppercase">Mes</label>
-                  <select className="input-field">
-                    <option>Abril</option>
-                    <option>Mayo</option>
-                    <option>Junio</option>
+                  <select 
+                    className="input-field"
+                    value={manualData.month}
+                    onChange={(e) => setManualData({ ...manualData, month: e.target.value })}
+                  >
+                    {['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'].map(m => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
                   </select>
                 </div>
               </div>
               <div className="flex flex-col gap-1">
                 <label className="text-xs font-bold text-text-light uppercase">Ventas Netas</label>
-                <input type="number" placeholder="$ 0" className="input-field" />
+                <input 
+                  type="number" 
+                  placeholder="$ 0" 
+                  className="input-field"
+                  value={manualData.ventasNetas}
+                  onChange={(e) => setManualData({ ...manualData, ventasNetas: e.target.value })}
+                  required
+                />
               </div>
               <div className="flex grid grid-cols-2 gap-4">
                 <div className="flex flex-col gap-1">
                   <label className="text-xs font-bold text-text-light uppercase">Costo</label>
-                  <input type="number" placeholder="$ 0" className="input-field" />
+                  <input 
+                    type="number" 
+                    placeholder="$ 0" 
+                    className="input-field"
+                    value={manualData.costo}
+                    onChange={(e) => setManualData({ ...manualData, costo: e.target.value })}
+                    required
+                  />
                 </div>
                 <div className="flex flex-col gap-1">
                   <label className="text-xs font-bold text-text-light uppercase">Gastos</label>
-                  <input type="number" placeholder="$ 0" className="input-field" />
+                  <input 
+                    type="number" 
+                    placeholder="$ 0" 
+                    className="input-field"
+                    value={manualData.gastos}
+                    onChange={(e) => setManualData({ ...manualData, gastos: e.target.value })}
+                    required
+                  />
                 </div>
               </div>
-              <button type="button" className="btn-primary mt-4">
+              <button 
+                type="submit" 
+                disabled={isSavingManual}
+                className="btn-primary mt-4 flex items-center justify-center gap-2"
+              >
+                {isSavingManual ? <Loader2 className="animate-spin" size={18} /> : <Check size={18} />}
                 Guardar Registro
               </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Nuevo Usuario */}
+      {showUserModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl animate-in fade-in zoom-in duration-200">
+            <h3 className="text-2xl font-bold text-primary mb-6 flex items-center gap-2">
+              <UserPlus size={24} />
+              Crear Nuevo Usuario
+            </h3>
+            <form onSubmit={handleCreateUser} className="flex flex-col gap-4">
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-bold text-text-light uppercase">Correo Electrónico</label>
+                <input 
+                  type="email" 
+                  required
+                  className="input-field"
+                  placeholder="usuario@facore.cl"
+                  value={newUser.email}
+                  onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-bold text-text-light uppercase">Contraseña</label>
+                <input 
+                  type="password" 
+                  required
+                  className="input-field"
+                  placeholder="••••••••"
+                  value={newUser.password}
+                  onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-bold text-text-light uppercase">Rol</label>
+                <select 
+                  className="input-field"
+                  value={newUser.role}
+                  onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}
+                >
+                  <option value="admin">Administrador</option>
+                  <option value="editor">Editor</option>
+                  <option value="visor">Visor</option>
+                </select>
+              </div>
+              <div className="flex gap-4 mt-4">
+                <button 
+                  type="button"
+                  onClick={() => setShowUserModal(false)}
+                  className="flex-1 py-3 px-4 bg-accent/10 text-text font-bold rounded-xl hover:bg-accent/20 transition-all"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  type="submit"
+                  disabled={isCreatingUser}
+                  className="flex-1 btn-primary flex items-center justify-center gap-2"
+                >
+                  {isCreatingUser ? <Loader2 className="animate-spin" size={18} /> : <Check size={18} />}
+                  Crear
+                </button>
+              </div>
             </form>
           </div>
         </div>
