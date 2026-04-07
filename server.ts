@@ -341,15 +341,148 @@ apiRouter.post('/financial-data', authenticateToken, async (req, res) => {
 apiRouter.post('/upload-pdf', authenticateToken, upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No se subió ningún archivo' });
   try {
-    const pdfData = await pdf(req.file.buffer);
+    let pdfData;
+    try {
+      pdfData = await pdf(req.file.buffer);
+    } catch (pdfErr: any) {
+      console.error('Error en pdf-parse:', pdfErr);
+      return res.status(422).json({ error: `No se pudo leer el archivo PDF. Asegúrate de que sea un archivo válido. (Detalle: ${pdfErr.message})` });
+    }
     const text = pdfData.text;
+    if (!text || text.trim().length === 0) {
+      return res.status(422).json({ error: 'El PDF no contiene texto extraíble. Asegúrate de que no sea una imagen escaneada sin OCR.' });
+    }
     console.log('PDF Procesado, texto extraído (primeros 200 chars):', text.substring(0, 200));
 
     // Lógica de extracción (basada en el formato "CUADRO DE RESULTADO")
-    // Buscamos patrones como "Ventas Netas", "Costo de Ventas", "Gastos", "Resultado"
-    // Y también el mes y año
-    
     const months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+    
+    // 1. Detectar si es un "CUADRO DE RESULTADO" (formato tabla multi-año)
+    if (text.toUpperCase().includes('CUADRO DE RESULTADO')) {
+      console.log('📊 Detectado formato CUADRO DE RESULTADO (Multi-año)');
+      const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+      
+      // Encontrar años en la cabecera
+      let years: number[] = [];
+      for (const line of lines) {
+        if (line.includes('MES') && line.match(/202[2-9]/)) {
+          const matches = line.match(/202[2-9]/g);
+          if (matches) {
+            years = matches.map(Number);
+            break;
+          }
+        }
+      }
+
+      if (years.length > 0) {
+        console.log('📅 Años detectados en tabla:', years);
+        const records: any[] = [];
+        let currentMonthName = '';
+        let currentMonthIdx = -1;
+
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          const upperLine = line.toUpperCase();
+
+          // Detectar mes (con soporte para errores de OCR como "OCUBRE")
+          const mIdx = months.findIndex(m => {
+            const mUpper = m.toUpperCase();
+            if (upperLine === mUpper) return true;
+            if (mUpper === 'OCTUBRE' && upperLine === 'OCUBRE') return true;
+            // Si la línea es solo el mes o empieza por el mes seguido de espacio
+            if (upperLine.startsWith(mUpper + ' ') || upperLine.startsWith(mUpper + '\t')) return true;
+            return false;
+          });
+
+          if (mIdx >= 0) {
+            currentMonthName = months[mIdx];
+            currentMonthIdx = mIdx;
+            continue;
+          }
+
+          if (currentMonthIdx === -1) continue;
+
+          // Función interna para extraer valores de una línea
+          const getValuesFromLine = (l: string) => {
+            const matches = l.match(/(?:-?\d{1,3}(?:\.\d{3})*(?:,\d+)?|-)/g) || [];
+            return matches.map(m => {
+              if (m === '-') return 0;
+              return parseFloat(m.replace(/\./g, '').replace(/,/g, '.'));
+            });
+          };
+
+          if (upperLine.includes('VENTAS NETAS')) {
+            const vNetas = getValuesFromLine(line);
+            
+            // Buscar las siguientes líneas para Costo, Gastos, Resultado
+            let cVentas: number[] = [];
+            let gOps: number[] = [];
+            let rMes: number[] = [];
+
+            for (let j = 1; j <= 4; j++) {
+              const nextLine = lines[i + j];
+              if (!nextLine) break;
+              const nextUpper = nextLine.toUpperCase();
+              if (nextUpper.includes('COSTO')) cVentas = getValuesFromLine(nextLine);
+              else if (nextUpper.includes('GASTOS')) gOps = getValuesFromLine(nextLine);
+              else if (nextUpper.includes('RESULTADO')) rMes = getValuesFromLine(nextLine);
+            }
+
+            // Mapear a cada año (alineando por el final si faltan valores, común en tablas financieras)
+            years.forEach((y, idx) => {
+              const vIdx = idx - (years.length - vNetas.length);
+              const cIdx = idx - (years.length - cVentas.length);
+              const gIdx = idx - (years.length - gOps.length);
+              const rIdx = idx - (years.length - rMes.length);
+
+              const record = {
+                year: y,
+                month: currentMonthName,
+                monthIndex: currentMonthIdx,
+                ventasNetas: vIdx >= 0 ? vNetas[vIdx] : 0,
+                costo: cIdx >= 0 ? cVentas[cIdx] : 0,
+                gastos: gIdx >= 0 ? gOps[gIdx] : 0,
+                resultadoMes: rIdx >= 0 ? rMes[rIdx] : 0
+              };
+              
+              if (record.ventasNetas !== 0 || record.resultadoMes !== 0) {
+                records.push(record);
+              }
+            });
+          }
+        }
+
+        if (records.length > 0) {
+          console.log(`✅ Se extrajeron ${records.length} registros de la tabla.`);
+          console.log('Primer registro:', records[0]);
+          console.log('Último registro:', records[records.length - 1]);
+          for (const r of records) {
+            if (isMockMode) {
+              const idx = mockFinancialRecords.findIndex(mr => mr.year === r.year && mr.monthIndex === r.monthIndex);
+              if (idx >= 0) mockFinancialRecords[idx] = r;
+              else mockFinancialRecords.push(r);
+            } else {
+              await pool!.query(`
+                INSERT INTO financial_records (year, month, month_index, ventas_netas, costo, gastos, resultado_mes)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                ON CONFLICT (year, month_index) DO UPDATE SET
+                  ventas_netas = EXCLUDED.ventas_netas,
+                  costo = EXCLUDED.costo,
+                  gastos = EXCLUDED.gastos,
+                  resultado_mes = EXCLUDED.resultado_mes
+              `, [r.year, r.month, r.monthIndex, r.ventasNetas, r.costo, r.gastos, r.resultadoMes]);
+            }
+          }
+          return res.json({ 
+            success: true, 
+            message: `Se procesaron ${records.length} registros exitosamente (Periodos: ${records[0].month} ${records[0].year} a ${records[records.length-1].month} ${records[records.length-1].year}).`, 
+            data: records[records.length - 1] 
+          });
+        }
+      }
+    }
+
+    // Fallback: Lógica de extracción para un solo registro (formato estándar)
     let year = 2025;
     let month = 'Enero';
     let monthIndex = 0;
@@ -414,9 +547,9 @@ apiRouter.post('/upload-pdf', authenticateToken, upload.single('file'), async (r
     }
 
     res.json({ success: true, data: { year, month, ventasNetas, resultadoMes } });
-  } catch (err) {
+  } catch (err: any) {
     console.error('Error al procesar PDF:', err);
-    res.status(500).json({ error: 'Error al procesar PDF' });
+    res.status(500).json({ error: `Error al procesar PDF: ${err.message || 'Error desconocido'}` });
   }
 });
 

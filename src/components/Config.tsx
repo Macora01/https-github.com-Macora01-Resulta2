@@ -42,7 +42,8 @@ export const Config = () => {
         const result = await response.json();
         setUploadData(result.data);
         setUploadStatus('success');
-        alert(`✅ PDF procesado con éxito:\n\nPeriodo: ${result.data.month} ${result.data.year}\nVentas: ${new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP' }).format(result.data.ventasNetas)}\nResultado: ${new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP' }).format(result.data.resultadoMes)}`);
+        const message = result.message || `✅ PDF procesado con éxito:\n\nPeriodo: ${result.data.month} ${result.data.year}\nVentas: ${new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP' }).format(result.data.ventasNetas)}\nResultado: ${new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP' }).format(result.data.resultadoMes)}`;
+        alert(message);
       } else {
         const errorData = await response.json().catch(() => ({ error: 'Error desconocido' }));
         setUploadStatus('error');
