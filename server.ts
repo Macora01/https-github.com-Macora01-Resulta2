@@ -314,6 +314,7 @@ apiRouter.get('/financial-data', authenticateToken, async (req, res) => {
 
 apiRouter.post('/financial-data', authenticateToken, async (req, res) => {
   const { year, month, monthIndex, ventasNetas, costo, gastos, resultadoMes } = req.body;
+  console.log(`📥 Datos recibidos en /api/financial-data para ${month} ${year}:`, req.body);
   try {
     if (isMockMode) {
       const index = mockFinancialRecords.findIndex(r => r.year === year && r.monthIndex === monthIndex);

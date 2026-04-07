@@ -120,15 +120,29 @@ export const Config = () => {
     const months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
     const monthIndex = months.indexOf(manualData.month);
     
+    // Sanitizar números (quitar puntos de miles si el usuario los puso)
+    const cleanNum = (val: any) => {
+      if (!val) return 0;
+      const cleaned = val.toString().replace(/\./g, '').replace(/,/g, '.');
+      const num = parseFloat(cleaned);
+      return isNaN(num) ? 0 : num;
+    };
+
+    const v = cleanNum(manualData.ventasNetas);
+    const c = cleanNum(manualData.costo);
+    const g = cleanNum(manualData.gastos);
+    
     const payload = {
       year: Number(manualData.year),
       month: manualData.month,
       monthIndex,
-      ventasNetas: Number(manualData.ventasNetas),
-      costo: Number(manualData.costo),
-      gastos: Number(manualData.gastos),
-      resultadoMes: Number(manualData.ventasNetas) - Number(manualData.costo) - Number(manualData.gastos)
+      ventasNetas: v,
+      costo: c,
+      gastos: g,
+      resultadoMes: v - c - g
     };
+
+    console.log('📡 Enviando datos manuales:', payload);
 
     try {
       const response = await fetch('/api/financial-data', {
@@ -139,14 +153,19 @@ export const Config = () => {
         },
         body: JSON.stringify(payload)
       });
+      
+      console.log('📥 Respuesta servidor (Manual):', response.status, response.statusText);
+      
       if (response.ok) {
-        alert('Datos guardados correctamente');
+        alert('✅ Datos guardados correctamente');
         setManualData({ ...manualData, ventasNetas: '', costo: '', gastos: '' });
       } else {
-        alert('Error al guardar datos');
+        const errorData = await response.json().catch(() => ({ error: 'Error desconocido' }));
+        alert(`❌ Error al guardar: ${errorData.error || response.statusText}`);
       }
     } catch (err) {
-      alert('Error de conexión');
+      console.error('❌ Error de conexión detallado:', err);
+      alert(`Error de conexión: ${err instanceof Error ? err.message : String(err)}. Verifica los logs del servidor.`);
     } finally {
       setIsSavingManual(false);
     }
