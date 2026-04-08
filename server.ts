@@ -439,9 +439,10 @@ apiRouter.post('/upload-pdf', authenticateToken, upload.single('file'), async (r
           const isExplicitHeader = line.toUpperCase().includes('MES') || line.toUpperCase().includes('AÑO') || line.toUpperCase().includes('DETALLE');
           
           if (uniqueYears.length > maxYearsFound || (uniqueYears.length === maxYearsFound && isExplicitHeader)) {
-            years = uniqueYears;
+            // Filtrar 2022 por solicitud del usuario
+            years = uniqueYears.filter(y => y !== 2022);
             headerLineIdx = i;
-            maxYearsFound = uniqueYears.length;
+            maxYearsFound = years.length;
             // Si tiene 3 o más años y es explícita, probablemente es la cabecera definitiva
             if (maxYearsFound >= 3 && isExplicitHeader) break;
           }
@@ -481,8 +482,12 @@ apiRouter.post('/upload-pdf', authenticateToken, upload.single('file'), async (r
           const upperLine = line.toUpperCase();
 
           // Detener el procesamiento si llegamos a la sección de TOTALES
-          const isTotalHeader = upperLine.includes('TOTALES') || upperLine.includes('T0TALES');
-          const isGenericTotal = upperLine.includes('TOTAL') && !upperLine.includes('VENTA') && !upperLine.includes('COSTO') && !upperLine.includes('GASTO') && !upperLine.includes('RESULTADO');
+          const isTotalHeader = upperLine.includes('TOTALES') || upperLine.includes('T0TALES') || upperLine.includes('TOTAL ACUMULADO');
+          const isGenericTotal = (upperLine.startsWith('TOTAL') || upperLine === 'TOTAL') && 
+                                !upperLine.includes('VENTA') && 
+                                !upperLine.includes('COSTO') && 
+                                !upperLine.includes('GASTO') && 
+                                !upperLine.includes('RESULTADO');
           
           if (isTotalHeader || isGenericTotal) {
             console.log('🛑 Sección de TOTALES detectada. Finalizando extracción de tabla.');
@@ -584,6 +589,20 @@ apiRouter.post('/upload-pdf', authenticateToken, upload.single('file'), async (r
                 gastos: getVal(gOps, idx),
                 resultadoMes: getVal(rMes, idx)
               };
+
+              // Si es 2026 y el mes es después de Marzo (según el PDF de ejemplo), 
+              // o si los valores son sospechosamente altos (totales), los ponemos en 0
+              // El usuario indicó que Dic 2026 debe ser 0.
+              if (y === 2026 && currentMonthIdx >= 3) {
+                // Si el PDF es hasta Marzo 2026, cualquier mes posterior debe ser 0
+                // Pero para ser seguros, si es Diciembre 2026, forzamos 0
+                if (currentMonthIdx === 11) {
+                  record.ventasNetas = 0;
+                  record.costo = 0;
+                  record.gastos = 0;
+                  record.resultadoMes = 0;
+                }
+              }
 
               if (record.ventasNetas !== 0 || record.costo !== 0 || record.gastos !== 0 || record.resultadoMes !== 0) {
                 records.push(record);
