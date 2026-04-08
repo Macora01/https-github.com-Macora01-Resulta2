@@ -106,6 +106,11 @@ async function initDb() {
       console.log('📊 Estadísticas de la base de datos:');
       console.log(`- Usuarios: ${userCount.rows[0].count}`);
       console.log(`- Registros Financieros: ${recordsCount.rows[0].count}`);
+
+      // Limpieza de 2022 por solicitud del usuario (una sola vez al iniciar)
+      await client.query('DELETE FROM financial_records WHERE year = 2022');
+      console.log('🧹 Registros de 2022 eliminados por solicitud del usuario');
+
       console.log('✅ PostgreSQL Database initialized successfully');
 
     } finally {
@@ -341,9 +346,9 @@ apiRouter.get('/financial-data', authenticateToken, async (req, res) => {
   try {
     let records;
     if (isMockMode) {
-      records = mockFinancialRecords;
+      records = mockFinancialRecords.filter(r => r.year !== 2022);
     } else {
-      const result = await pool!.query('SELECT * FROM financial_records ORDER BY year DESC, month_index ASC');
+      const result = await pool!.query('SELECT * FROM financial_records WHERE year != 2022 ORDER BY year DESC, month_index ASC');
       records = result.rows;
     }
     res.json(records.map(row => ({

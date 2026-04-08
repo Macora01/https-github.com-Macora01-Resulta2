@@ -14,12 +14,6 @@ export const MONTHS = [
 ];
 
 export const financialData: FinancialRecord[] = [
-  // 2022
-  { year: 2022, month: 'Septiembre', monthIndex: 8, ventasNetas: 29597991, costo: 13319096, gastos: 14208955, resultadoMes: 2069940 },
-  { year: 2022, month: 'Octubre', monthIndex: 9, ventasNetas: 39470970, costo: 17761936, gastos: 13191022, resultadoMes: 8518011 },
-  { year: 2022, month: 'Noviembre', monthIndex: 10, ventasNetas: 58964607, costo: 26534073, gastos: 22559821, resultadoMes: 9870713 },
-  { year: 2022, month: 'Diciembre', monthIndex: 11, ventasNetas: 125204431, costo: 56341994, gastos: 55752692, resultadoMes: 13109745 },
-
   // 2023
   { year: 2023, month: 'Enero', monthIndex: 0, ventasNetas: 45416050, costo: 20437223, gastos: 8988843, resultadoMes: 15989985 },
   { year: 2023, month: 'Febrero', monthIndex: 1, ventasNetas: 35801353, costo: 16110609, gastos: 8680730, resultadoMes: 11010014 },
