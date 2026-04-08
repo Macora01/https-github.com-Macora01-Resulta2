@@ -6,9 +6,10 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 
 interface AIForecastProps {
   data: any[];
+  isExporting?: boolean;
 }
 
-export const AIForecast: React.FC<AIForecastProps> = ({ data }) => {
+export const AIForecast: React.FC<AIForecastProps> = ({ data, isExporting = false }) => {
   const [forecast, setForecast] = React.useState<any>(null);
   const [loading, setLoading] = React.useState(false);
 
@@ -25,7 +26,7 @@ export const AIForecast: React.FC<AIForecastProps> = ({ data }) => {
   };
 
   return (
-    <div className="glass-card p-6 flex flex-col gap-6">
+    <div id="forecast-card" className="glass-card p-6 flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="p-2 bg-secondary/10 text-secondary rounded-lg">
@@ -70,8 +71,8 @@ export const AIForecast: React.FC<AIForecastProps> = ({ data }) => {
                   contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)' }}
                 />
                 <Legend />
-                <Bar dataKey="predictedVentas" name="Ventas Proyectadas" fill="#5f2e0a" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="predictedResultado" name="Resultado Proyectado" fill="#6B8E23" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="predictedVentas" name="Ventas Proyectadas" fill="#5f2e0a" radius={[4, 4, 0, 0]} isAnimationActive={!isExporting} />
+                <Bar dataKey="predictedResultado" name="Resultado Proyectado" fill="#6B8E23" radius={[4, 4, 0, 0]} isAnimationActive={!isExporting} />
               </BarChart>
             </ResponsiveContainer>
           </div>

@@ -116,6 +116,12 @@ export const Reports = () => {
     setIsExporting(true);
     
     try {
+      // Scroll to top to avoid capture offsets
+      window.scrollTo(0, 0);
+      
+      // Wait for any animations to finish
+      await new Promise(resolve => setTimeout(resolve, 1500));
+
       const pdf = new jsPDF('p', 'mm', 'a4');
       const pageWidth = pdf.internal.pageSize.getWidth();
       const margin = 15;
@@ -123,9 +129,9 @@ export const Reports = () => {
       let currentY = 20;
 
       // 1. Header
-      pdf.setFontSize(20);
+      pdf.setFontSize(22);
       pdf.setTextColor(95, 46, 10); // Primary color #5f2e0a
-      pdf.text('Reporte Financiero Detallado', margin, currentY);
+      pdf.text('Reporte Financiero Facore', margin, currentY);
       currentY += 10;
       
       pdf.setFontSize(12);
@@ -136,31 +142,38 @@ export const Reports = () => {
       pdf.text(periodText, margin, currentY);
       currentY += 15;
 
-      // Helper function to capture an element
+      // Helper function to capture an element with better error handling and delay
       const captureElement = async (id: string) => {
         const el = document.getElementById(id);
         if (!el) return null;
-        return await html2canvas(el, {
-          scale: 2,
-          useCORS: true,
-          backgroundColor: '#ffffff',
-          logging: false,
-          onclone: (clonedDoc) => {
-            const clonedEl = clonedDoc.getElementById(id);
-            if (clonedEl) {
-              clonedEl.style.backdropFilter = 'none';
-              clonedEl.style.background = 'white';
-              clonedEl.style.boxShadow = 'none';
-              clonedEl.style.border = '1px solid #eee';
+        
+        try {
+          return await html2canvas(el, {
+            scale: 1.5, // Lower scale for Safari compatibility
+            useCORS: true,
+            backgroundColor: '#ffffff',
+            logging: false,
+            onclone: (clonedDoc) => {
+              const clonedEl = clonedDoc.getElementById(id);
+              if (clonedEl) {
+                clonedEl.style.backdropFilter = 'none';
+                clonedEl.style.background = 'white';
+                clonedEl.style.boxShadow = 'none';
+                clonedEl.style.border = '1px solid #eee';
+                clonedEl.style.borderRadius = '0';
+              }
             }
-          }
-        });
+          });
+        } catch (err) {
+          console.warn(`Failed to capture ${id}:`, err);
+          return null;
+        }
       };
 
       // 2. Capture Summary Card
       const summaryCanvas = await captureElement('summary-card');
       if (summaryCanvas) {
-        const imgData = summaryCanvas.toDataURL('image/jpeg', 0.9);
+        const imgData = summaryCanvas.toDataURL('image/jpeg', 0.8);
         const imgHeight = (summaryCanvas.height * contentWidth) / summaryCanvas.width;
         pdf.addImage(imgData, 'JPEG', margin, currentY, contentWidth, imgHeight);
         currentY += imgHeight + 15;
@@ -169,10 +182,9 @@ export const Reports = () => {
       // 3. Capture Chart
       const chartCanvas = await captureElement('chart-container');
       if (chartCanvas) {
-        const imgData = chartCanvas.toDataURL('image/jpeg', 0.9);
+        const imgData = chartCanvas.toDataURL('image/jpeg', 0.8);
         const imgHeight = (chartCanvas.height * contentWidth) / chartCanvas.width;
         
-        // Check if we need a new page for the chart
         if (currentY + imgHeight > pdf.internal.pageSize.getHeight() - 20) {
           pdf.addPage();
           currentY = 20;
@@ -182,7 +194,22 @@ export const Reports = () => {
         currentY += imgHeight + 15;
       }
 
-      // 4. Data Table using autoTable
+      // 4. Capture Forecast Card (if exists)
+      const forecastCanvas = await captureElement('forecast-card');
+      if (forecastCanvas) {
+        const imgData = forecastCanvas.toDataURL('image/jpeg', 0.8);
+        const imgHeight = (forecastCanvas.height * contentWidth) / forecastCanvas.width;
+        
+        if (currentY + imgHeight > pdf.internal.pageSize.getHeight() - 20) {
+          pdf.addPage();
+          currentY = 20;
+        }
+        
+        pdf.addImage(imgData, 'JPEG', margin, currentY, contentWidth, imgHeight);
+        currentY += imgHeight + 15;
+      }
+
+      // 5. Data Table
       const tableHeaders = [['Mes', ...selectedYears.flatMap(year => 
         selectedItems.map(itemId => `${items.find(i => i.id === itemId)?.label} (${year})`)
       )]];
@@ -199,11 +226,10 @@ export const Reports = () => {
         head: tableHeaders,
         body: tableRows,
         margin: { left: margin, right: margin },
-        styles: { fontSize: 8, cellPadding: 2 },
+        styles: { fontSize: 8, cellPadding: 2, font: 'helvetica' },
         headStyles: { fillColor: [95, 46, 10], textColor: [255, 255, 255] },
         alternateRowStyles: { fillColor: [245, 245, 240] },
         didDrawPage: (data) => {
-          // Add footer with page number
           const str = 'Página ' + pdf.getNumberOfPages();
           pdf.setFontSize(10);
           pdf.text(str, pageWidth - margin - 20, pdf.internal.pageSize.getHeight() - 10);
@@ -213,7 +239,7 @@ export const Reports = () => {
       pdf.save(`Reporte_Facore_${selectedYears.join('_')}.pdf`);
     } catch (error) {
       console.error('Error generating PDF:', error);
-      alert('Error al generar el PDF. Por favor, intente de nuevo o descargue los datos en CSV.');
+      alert('Error técnico al generar el PDF. Por favor, intente descargar los datos en CSV mientras solucionamos este inconveniente.');
     } finally {
       setIsExporting(false);
     }
@@ -406,7 +432,7 @@ export const Reports = () => {
           </div>
         </div>
 
-        <AIForecast data={data} />
+        <AIForecast data={data} isExporting={isExporting} />
 
         {/* Data Table for PDF */}
         <div className="glass-card overflow-hidden">
