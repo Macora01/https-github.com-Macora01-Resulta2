@@ -1,3 +1,7 @@
+/**
+ * AIForecast Component
+ * Version: 01.00.001
+ */
 import React from 'react';
 import { TrendingUp, Calendar, Loader2, Sparkles, AlertCircle } from 'lucide-react';
 import { getForecast } from '../services/geminiService';

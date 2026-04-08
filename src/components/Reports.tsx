@@ -1,3 +1,7 @@
+/**
+ * Reports Component
+ * Version: 01.00.001
+ */
 import React from 'react';
 import { 
   FileText, 
@@ -121,7 +125,7 @@ export const Reports = () => {
       // Scroll to top to ensure clean capture
       window.scrollTo(0, 0);
       // Wait for animations to settle and charts to render
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await new Promise(resolve => setTimeout(resolve, 2000));
 
       const pdf = new jsPDF('p', 'mm', 'a4');
       const pageWidth = pdf.internal.pageSize.getWidth();
@@ -157,7 +161,7 @@ export const Reports = () => {
         
         try {
           return await html2canvas(el, {
-            scale: 1.5,
+            scale: 2,
             useCORS: true,
             backgroundColor: '#ffffff',
             logging: false,
@@ -203,54 +207,34 @@ export const Reports = () => {
         }
       };
 
-      // 2. Capture Summary Card
-      setExportStatus('Capturando resumen...');
-      const summaryCanvas = await captureElement('summary-card', '500px');
+      // 2. Capture Visuals (Summary + Charts + AI)
+      setExportStatus('Capturando visualizaciones...');
+      const visualsCanvas = await captureElement('report-visuals', '1200px');
       
-      // 3. Capture Chart
-      setExportStatus('Capturando gráficos...');
-      const chartCanvas = await captureElement('chart-container', '800px');
-
-      if (summaryCanvas && chartCanvas) {
-        const summaryW = contentWidth * 0.38;
-        const chartW = contentWidth * 0.58;
-        const gap = contentWidth * 0.04;
+      if (visualsCanvas) {
+        const imgData = visualsCanvas.toDataURL('image/jpeg', 0.95);
+        const imgHeight = (visualsCanvas.height * contentWidth) / visualsCanvas.width;
         
-        const summaryH = (summaryCanvas.height * summaryW) / summaryCanvas.width;
-        const chartH = (chartCanvas.height * chartW) / chartCanvas.width;
-        
-        const rowHeight = Math.max(summaryH, chartH);
-        
-        pdf.addImage(summaryCanvas.toDataURL('image/png'), 'PNG', margin, currentY, summaryW, summaryH);
-        pdf.addImage(chartCanvas.toDataURL('image/png'), 'PNG', margin + summaryW + gap, currentY, chartW, chartH);
-        
-        currentY += rowHeight + 12;
-      } else if (summaryCanvas || chartCanvas) {
-        const canvas = summaryCanvas || chartCanvas;
-        if (canvas) {
-          const imgHeight = (canvas.height * contentWidth) / canvas.width;
-          pdf.addImage(canvas.toDataURL('image/png'), 'PNG', margin, currentY, contentWidth, imgHeight);
-          currentY += imgHeight + 12;
-        }
-      }
-
-      // 4. Capture AI Forecast
-      setExportStatus('Capturando análisis de IA...');
-      const forecastCanvas = await captureElement('forecast-card', '1200px');
-      if (forecastCanvas) {
-        const imgData = forecastCanvas.toDataURL('image/png');
-        const imgHeight = (forecastCanvas.height * contentWidth) / forecastCanvas.width;
-        
+        // If visuals are too tall, they might need scaling or multiple pages
         if (currentY + imgHeight > pageHeight - 20) {
-          pdf.addPage();
-          currentY = 20;
+          // Add visuals on a new page if they don't fit at all
+          if (currentY > 60) {
+            pdf.addPage();
+            currentY = 20;
+          }
+          
+          // Scale down if still too tall for a single page
+          const maxH = pageHeight - currentY - 20;
+          const finalH = Math.min(imgHeight, maxH);
+          pdf.addImage(imgData, 'JPEG', margin, currentY, contentWidth, finalH);
+          currentY += finalH + 10;
+        } else {
+          pdf.addImage(imgData, 'JPEG', margin, currentY, contentWidth, imgHeight);
+          currentY += imgHeight + 10;
         }
-        
-        pdf.addImage(imgData, 'PNG', margin, currentY, contentWidth, imgHeight);
-        currentY += imgHeight + 15;
       }
 
-      // 5. Data Table
+      // 3. Data Table
       setExportStatus('Generando tablas...');
       if (currentY > pageHeight - 60) {
         pdf.addPage();

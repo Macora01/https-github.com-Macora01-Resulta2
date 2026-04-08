@@ -1,5 +1,10 @@
+/**
+ * Auth Component
+ * Version: 01.00.001
+ */
 import React from 'react';
 import { Lock, Mail, ArrowRight, BarChart3, Play } from 'lucide-react';
+import { APP_VERSION } from '../version';
 
 export const Auth = ({ onLogin }: { onLogin: (user: any) => void }) => {
   const [email, setEmail] = React.useState('');
@@ -141,9 +146,12 @@ export const Auth = ({ onLogin }: { onLogin: (user: any) => void }) => {
             </button>
           </form>
 
-          <div className="mt-8 pt-6 border-t border-accent/20 text-center">
+          <div className="mt-8 pt-6 border-t border-accent/20 text-center flex flex-col gap-2">
             <p className="text-xs text-text-light font-medium uppercase tracking-widest">
               Acceso Restringido • Facore 2026
+            </p>
+            <p className="text-[10px] text-text-light/60 font-mono">
+              v{APP_VERSION}
             </p>
           </div>
         </div>
