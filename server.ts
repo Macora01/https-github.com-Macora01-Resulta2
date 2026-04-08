@@ -454,10 +454,18 @@ apiRouter.post('/upload-pdf', authenticateToken, upload.single('file'), async (r
         
         // Función interna para extraer valores de una línea
         const getValuesFromLine = (l: string) => {
-          // Busca números con formato chileno (puntos para miles, coma para decimales) o guiones para cero
-          const matches = l.match(/(?:-?\d{1,3}(?:\.\d{3})*(?:,\d+)?|-)/g) || [];
+          // 1. Normalizar: quitar símbolos de moneda y ruidos comunes
+          let cleanLine = l.replace(/\$|CLP/g, ' ');
+          
+          // 2. Detectar guiones contables (standalone dashes) y convertirlos en "0"
+          // Buscamos "-" que esté rodeado de espacios o al inicio/fin de línea
+          // También manejamos diferentes tipos de guiones (en dash, em dash)
+          cleanLine = cleanLine.replace(/(^|[\s\t])[-\u2013\u2014](?=[\s\t]|$)/g, '$1 0 ');
+          
+          // 3. Extraer todos los números (formato chileno: 1.234.567,89)
+          const matches = cleanLine.match(/-?\d{1,3}(?:\.\d{3})*(?:,\d+)?/g) || [];
+          
           return matches.map(m => {
-            if (m === '-') return 0;
             // Limpiar puntos de miles y cambiar coma decimal por punto
             let val = m.replace(/\./g, '').replace(/,/g, '.');
             return parseFloat(val);
@@ -466,19 +474,19 @@ apiRouter.post('/upload-pdf', authenticateToken, upload.single('file'), async (r
 
         let currentMonthIdx = -1;
         let currentMonthName = '';
+        let isInsideTotalsSection = false;
 
         for (let i = headerLineIdx + 1; i < lines.length; i++) {
           const line = lines[i];
           const upperLine = line.toUpperCase();
 
           // Detener el procesamiento si llegamos a la sección de TOTALES
-          // Buscamos variaciones de TOTALES (T0TALES, TOTALE, etc.)
-          const isTotalSection = upperLine.includes('TOTALES') || 
-                                upperLine.includes('T0TALES') || 
-                                (upperLine.includes('TOTAL') && !upperLine.includes('VENTA') && !upperLine.includes('COSTO') && !upperLine.includes('GASTO') && !upperLine.includes('RESULTADO'));
+          const isTotalHeader = upperLine.includes('TOTALES') || upperLine.includes('T0TALES');
+          const isGenericTotal = upperLine.includes('TOTAL') && !upperLine.includes('VENTA') && !upperLine.includes('COSTO') && !upperLine.includes('GASTO') && !upperLine.includes('RESULTADO');
           
-          if (isTotalSection) {
+          if (isTotalHeader || isGenericTotal) {
             console.log('🛑 Sección de TOTALES detectada. Finalizando extracción de tabla.');
+            isInsideTotalsSection = true;
             break;
           }
 
@@ -520,37 +528,33 @@ apiRouter.post('/upload-pdf', authenticateToken, upload.single('file'), async (r
               
               if (isMonthHeader(dataLine)) break;
               
-              // Si la línea contiene TOTAL y no es una de nuestras etiquetas principales, es el fin de los datos del mes
-              const isDataTotalLine = upperDataLine.includes('TOTAL') && 
-                                     !upperDataLine.includes('VENTA') && 
-                                     !upperDataLine.includes('COSTO') && 
-                                     !upperDataLine.includes('GASTO') && 
-                                     !upperDataLine.includes('RESULTADO');
+              // Si la línea contiene TOTAL o TOTALES, es el fin de los datos del mes
+              const isTotalLine = upperDataLine.includes('TOTALES') || 
+                                 upperDataLine.includes('T0TALES') ||
+                                 (upperDataLine.includes('TOTAL') && 
+                                  !upperDataLine.includes('VENTA') && 
+                                  !upperDataLine.includes('COSTO') && 
+                                  !upperDataLine.includes('GASTO') && 
+                                  !upperDataLine.includes('RESULTADO'));
               
-              if (upperDataLine.includes('TOTALES') || isDataTotalLine) break;
+              if (isTotalLine) break;
 
               const vals = getValuesFromLine(dataLine);
               if (vals.length > 0) {
-                // Solo asignamos si la línea NO parece ser una línea de totales acumulados
-                const isAccumulatedTotal = upperDataLine.includes('TOTAL') && (vals.length === years.length);
-                
+                // Si la línea tiene la misma cantidad de valores que años, es muy probable que sea una línea de datos válida
+                // Pero evitamos las líneas que contienen "TOTAL" para no duplicar acumulados
+                const isExplicitTotalLine = upperDataLine.includes('TOTAL');
+
                 if (upperDataLine.includes('VENTA') || upperDataLine.includes('INGRESO')) {
-                  if (!upperDataLine.includes('TOTAL')) {
-                    vNetas = vals; dataFoundCount = Math.max(dataFoundCount, 1);
-                  }
+                  if (!isExplicitTotalLine) { vNetas = vals; dataFoundCount = Math.max(dataFoundCount, 1); }
                 } else if (upperDataLine.includes('COSTO')) {
-                  if (!upperDataLine.includes('TOTAL')) {
-                    cVentas = vals; dataFoundCount = Math.max(dataFoundCount, 2);
-                  }
+                  if (!isExplicitTotalLine) { cVentas = vals; dataFoundCount = Math.max(dataFoundCount, 2); }
                 } else if (upperDataLine.includes('GASTO') || upperDataLine.includes('ADMINISTRACI')) {
-                  if (!upperDataLine.includes('TOTAL')) {
-                    gOps = vals; dataFoundCount = Math.max(dataFoundCount, 3);
-                  }
+                  if (!isExplicitTotalLine) { gOps = vals; dataFoundCount = Math.max(dataFoundCount, 3); }
                 } else if (upperDataLine.includes('RESULTADO') || upperDataLine.includes('UTILIDAD') || upperDataLine.includes('MARGEN')) {
-                  if (!upperDataLine.includes('TOTAL')) {
-                    rMes = vals; dataFoundCount = Math.max(dataFoundCount, 4);
-                  }
-                } else if (!upperDataLine.includes('TOTAL')) {
+                  if (!isExplicitTotalLine) { rMes = vals; dataFoundCount = Math.max(dataFoundCount, 4); }
+                } else if (!isExplicitTotalLine) {
+                  // Si no hay etiqueta, usamos el orden lógico (Ventas -> Costo -> Gastos -> Resultado)
                   if (dataFoundCount === 0) { vNetas = vals; dataFoundCount++; }
                   else if (dataFoundCount === 1) { cVentas = vals; dataFoundCount++; }
                   else if (dataFoundCount === 2) { gOps = vals; dataFoundCount++; }
@@ -560,21 +564,25 @@ apiRouter.post('/upload-pdf', authenticateToken, upload.single('file'), async (r
               if (dataFoundCount >= 4) break;
             }
 
-            // Guardar registros para cada año con ALINEACIÓN DESDE LA DERECHA
+            // Guardar registros para cada año con ALINEACIÓN INTELIGENTE
             years.forEach((y, idx) => {
-              const vIdx = idx - (years.length - vNetas.length);
-              const cIdx = idx - (years.length - cVentas.length);
-              const gIdx = idx - (years.length - gOps.length);
-              const rIdx = idx - (years.length - rMes.length);
+              // Si tenemos la cantidad exacta de valores, la asignación es directa
+              // Si faltan valores, usamos alineación a la derecha (asumiendo que los años más recientes están a la derecha)
+              const getVal = (arr: number[], yearIdx: number) => {
+                if (arr.length === years.length) return arr[yearIdx];
+                const offset = years.length - arr.length;
+                const adjustedIdx = yearIdx - offset;
+                return adjustedIdx >= 0 ? arr[adjustedIdx] : 0;
+              };
 
               const record = {
                 year: y,
                 month: currentMonthName,
                 monthIndex: currentMonthIdx,
-                ventasNetas: vIdx >= 0 ? vNetas[vIdx] : 0,
-                costo: cIdx >= 0 ? cVentas[cIdx] : 0,
-                gastos: gIdx >= 0 ? gOps[gIdx] : 0,
-                resultadoMes: rIdx >= 0 ? rMes[rIdx] : 0
+                ventasNetas: getVal(vNetas, idx),
+                costo: getVal(cVentas, idx),
+                gastos: getVal(gOps, idx),
+                resultadoMes: getVal(rMes, idx)
               };
 
               if (record.ventasNetas !== 0 || record.costo !== 0 || record.gastos !== 0 || record.resultadoMes !== 0) {
