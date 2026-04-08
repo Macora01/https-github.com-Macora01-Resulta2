@@ -120,66 +120,76 @@ export const Reports = () => {
     try {
       // Scroll to top to ensure clean capture
       window.scrollTo(0, 0);
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Wait for animations to settle and charts to render
+      await new Promise(resolve => setTimeout(resolve, 1500));
 
       const pdf = new jsPDF('p', 'mm', 'a4');
       const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
       const margin = 15;
       const contentWidth = pageWidth - (margin * 2);
-      let currentY = 20;
+      let currentY = 0;
 
-      // 1. Header
-      pdf.setFontSize(22);
-      pdf.setTextColor(95, 46, 10);
-      pdf.text('Reporte Financiero Facore', margin, currentY);
-      currentY += 10;
+      // 1. Premium Header
+      pdf.setFillColor(95, 46, 10); // Primary Facore color
+      pdf.rect(0, 0, pageWidth, 45, 'F');
       
-      pdf.setFontSize(12);
-      pdf.setTextColor(100, 100, 100);
+      pdf.setFontSize(24);
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('REPORTE FINANCIERO FACORE', margin, 25);
+      
+      pdf.setFontSize(10);
+      pdf.setTextColor(220, 220, 220);
+      pdf.setFont('helvetica', 'normal');
       const periodText = selectedYears.length > 1 
         ? `Periodo: ${Math.min(...selectedYears)} - ${Math.max(...selectedYears)}`
-        : `Año: ${selectedYears[0]}`;
-      pdf.text(periodText, margin, currentY);
-      currentY += 15;
+        : `Año Fiscal: ${selectedYears[0]}`;
+      pdf.text(periodText, margin, 35);
+      pdf.text(`Generado: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`, pageWidth - margin - 60, 35);
+      
+      currentY = 55;
 
       // Helper function to capture an element with robust settings
-      const captureElement = async (id: string, width?: string) => {
+      const captureElement = async (id: string, width: string) => {
         const el = document.getElementById(id);
-        if (!el) {
-          console.warn(`Element with id ${id} not found`);
-          return null;
-        }
+        if (!el) return null;
         
         try {
           return await html2canvas(el, {
-            scale: 1.5,
+            scale: 2,
             useCORS: true,
             backgroundColor: '#ffffff',
             logging: false,
             onclone: (clonedDoc) => {
               const clonedEl = clonedDoc.getElementById(id);
               if (clonedEl) {
-                if (width) {
-                  clonedEl.style.width = width;
-                  clonedEl.style.maxWidth = 'none';
-                }
-                (clonedEl.style as any).backdropFilter = 'none';
-                (clonedEl.style as any).webkitBackdropFilter = 'none';
-                clonedEl.style.boxShadow = 'none';
-                clonedEl.style.background = 'white';
-                clonedEl.style.transition = 'none';
-                clonedEl.style.animation = 'none';
+                clonedEl.style.width = width;
+                clonedEl.style.maxWidth = width;
+                clonedEl.style.padding = '24px';
+                clonedEl.style.margin = '0';
                 
-                const cards = clonedEl.getElementsByClassName('glass-card');
-                for (let i = 0; i < cards.length; i++) {
-                  const card = cards[i] as HTMLElement;
-                  (card.style as any).backdropFilter = 'none';
-                  (card.style as any).webkitBackdropFilter = 'none';
-                  card.style.background = 'white';
-                  card.style.boxShadow = 'none';
-                  card.style.border = '1px solid #eee';
-                  card.style.transition = 'none';
-                }
+                // Clean up styles for PDF
+                const allElements = clonedEl.querySelectorAll('*');
+                allElements.forEach((node: any) => {
+                  if (node.classList.contains('glass-card')) {
+                    node.style.backdropFilter = 'none';
+                    node.style.background = 'white';
+                    node.style.boxShadow = 'none';
+                    node.style.border = '1px solid #e5e7eb';
+                    node.style.borderRadius = '12px';
+                  }
+                  if (node.classList.contains('text-text-light')) {
+                    node.style.color = '#666666';
+                  }
+                });
+
+                // Force chart height for capture
+                const charts = clonedEl.querySelectorAll('.recharts-responsive-container');
+                charts.forEach((chart: any) => {
+                  chart.style.height = '350px';
+                  chart.style.width = '100%';
+                });
               }
             }
           });
@@ -189,56 +199,60 @@ export const Reports = () => {
         }
       };
 
-      // 2. Capture Summary Card
-      setExportStatus('Capturando resumen...');
-      const summaryCanvas = await captureElement('summary-card', '800px');
-      if (summaryCanvas) {
-        const imgData = summaryCanvas.toDataURL('image/jpeg', 0.8);
-        const imgHeight = (summaryCanvas.height * contentWidth) / summaryCanvas.width;
-        pdf.addImage(imgData, 'JPEG', margin, currentY, contentWidth, imgHeight);
-        currentY += imgHeight + 10;
-      }
-
-      // 3. Capture Chart
-      setExportStatus('Capturando gráficos...');
+      // 2. Capture Summary and Chart (Row 1)
+      setExportStatus('Capturando resumen y gráficos...');
+      const summaryCanvas = await captureElement('summary-card', '500px');
       const chartCanvas = await captureElement('chart-container', '800px');
-      if (chartCanvas) {
-        const imgData = chartCanvas.toDataURL('image/jpeg', 0.8);
-        const imgHeight = (chartCanvas.height * contentWidth) / chartCanvas.width;
+
+      if (summaryCanvas && chartCanvas) {
+        const summaryW = contentWidth * 0.38;
+        const chartW = contentWidth * 0.58;
+        const gap = contentWidth * 0.04;
         
-        if (currentY + imgHeight > pdf.internal.pageSize.getHeight() - 20) {
-          pdf.addPage();
-          currentY = 20;
-        }
+        const summaryH = (summaryCanvas.height * summaryW) / summaryCanvas.width;
+        const chartH = (chartCanvas.height * chartW) / chartCanvas.width;
         
-        pdf.addImage(imgData, 'JPEG', margin, currentY, contentWidth, imgHeight);
-        currentY += imgHeight + 10;
+        const rowHeight = Math.max(summaryH, chartH);
+        
+        pdf.addImage(summaryCanvas.toDataURL('image/jpeg', 0.95), 'JPEG', margin, currentY, summaryW, summaryH);
+        pdf.addImage(chartCanvas.toDataURL('image/jpeg', 0.95), 'JPEG', margin + summaryW + gap, currentY, chartW, chartH);
+        
+        currentY += rowHeight + 12;
       }
 
-      // 4. Capture AI Forecast
+      // 3. Capture AI Forecast (Row 2)
       setExportStatus('Capturando análisis de IA...');
-      const forecastCanvas = await captureElement('forecast-card', '1000px');
+      const forecastCanvas = await captureElement('forecast-card', '1200px');
+      
       if (forecastCanvas) {
-        const imgData = forecastCanvas.toDataURL('image/jpeg', 0.8);
         const imgHeight = (forecastCanvas.height * contentWidth) / forecastCanvas.width;
         
-        if (currentY + imgHeight > pdf.internal.pageSize.getHeight() - 20) {
+        // Check if it fits on current page
+        if (currentY + imgHeight > pageHeight - 20) {
           pdf.addPage();
           currentY = 20;
         }
         
-        pdf.addImage(imgData, 'JPEG', margin, currentY, contentWidth, imgHeight);
-        currentY += imgHeight + 10;
+        pdf.addImage(forecastCanvas.toDataURL('image/jpeg', 0.95), 'JPEG', margin, currentY, contentWidth, imgHeight);
+        currentY += imgHeight + 12;
       }
 
-      // 5. Data Table using autoTable
+      // 4. Data Table
       setExportStatus('Generando tablas...');
-      if (currentY > pdf.internal.pageSize.getHeight() - 60) {
+      
+      // Check if we should start on a new page
+      if (currentY > pageHeight - 80) {
         pdf.addPage();
         currentY = 20;
       } else {
-        currentY += 5;
+        currentY += 15;
       }
+
+      pdf.setFontSize(16);
+      pdf.setTextColor(95, 46, 10);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('DETALLE DE DATOS MENSUALES', margin, currentY);
+      currentY += 8;
 
       const tableHeaders = [['Mes', ...selectedYears.flatMap(year => 
         selectedItems.map(itemId => `${items.find(i => i.id === itemId)?.label} (${year})`)
@@ -256,13 +270,22 @@ export const Reports = () => {
         head: tableHeaders,
         body: tableRows,
         margin: { left: margin, right: margin },
-        styles: { fontSize: 8, cellPadding: 2, font: 'helvetica' },
-        headStyles: { fillColor: [95, 46, 10], textColor: [255, 255, 255] },
-        alternateRowStyles: { fillColor: [245, 245, 240] },
+        styles: { fontSize: 8, cellPadding: 3, font: 'helvetica' },
+        headStyles: { fillColor: [95, 46, 10], textColor: [255, 255, 255], fontStyle: 'bold' },
+        alternateRowStyles: { fillColor: [248, 245, 240] },
+        columnStyles: {
+          0: { fontStyle: 'bold' }
+        },
         didDrawPage: (data) => {
-          const str = 'Página ' + pdf.getNumberOfPages();
-          pdf.setFontSize(10);
-          pdf.text(str, pageWidth - margin - 20, pdf.internal.pageSize.getHeight() - 10);
+          const pageCount = pdf.getNumberOfPages();
+          pdf.setFontSize(9);
+          pdf.setTextColor(150, 150, 150);
+          pdf.text(
+            `Facore Dashboard - Página ${pageCount}`, 
+            pageWidth / 2, 
+            pdf.internal.pageSize.getHeight() - 10, 
+            { align: 'center' }
+          );
         }
       });
 
@@ -270,7 +293,7 @@ export const Reports = () => {
       pdf.save(`Reporte_Facore_${selectedYears.join('_')}.pdf`);
     } catch (error) {
       console.error('Error generating PDF:', error);
-      alert('Error al generar el PDF. Por favor, intente de nuevo o descargue los datos en CSV.');
+      alert('Error al generar el PDF. Por favor, intente de nuevo.');
     } finally {
       setIsExporting(false);
       setExportStatus('');
