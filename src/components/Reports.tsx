@@ -114,30 +114,75 @@ export const Reports = () => {
     setIsExporting(true);
     
     try {
+      // Small delay to ensure any layout shifts or animations are settled
+      await new Promise(resolve => setTimeout(resolve, 500));
+
       const canvas = await html2canvas(reportRef.current, {
         scale: 2,
         useCORS: true,
         logging: false,
-        backgroundColor: '#FDFCF8'
+        backgroundColor: '#FDFCF8',
+        windowWidth: reportRef.current.scrollWidth,
+        windowHeight: reportRef.current.scrollHeight
       });
       
       const imgData = canvas.toDataURL('image/png');
       const pdf = new jsPDF('p', 'mm', 'a4');
       const pdfWidth = pdf.internal.pageSize.getWidth();
       const pdfHeight = pdf.internal.pageSize.getHeight();
-      const imgWidth = canvas.width;
-      const imgHeight = canvas.height;
-      const ratio = Math.min(pdfWidth / imgWidth, pdfHeight / imgHeight);
-      const imgX = (pdfWidth - imgWidth * ratio) / 2;
-      const imgY = 10;
+      
+      // Calculate dimensions to fit the whole report on one or more pages
+      const imgWidth = pdfWidth - 20; // 10mm margins
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      
+      let heightLeft = imgHeight;
+      let position = 10; // Start 10mm from top
 
-      pdf.addImage(imgData, 'PNG', imgX, imgY, imgWidth * ratio, imgHeight * ratio);
+      pdf.addImage(imgData, 'PNG', 10, position, imgWidth, imgHeight);
+      heightLeft -= (pdfHeight - 20);
+
+      while (heightLeft > 0) {
+        position = heightLeft - imgHeight + 10;
+        pdf.addPage();
+        pdf.addImage(imgData, 'PNG', 10, position, imgWidth, imgHeight);
+        heightLeft -= (pdfHeight - 20);
+      }
+
       pdf.save(`Reporte_Facore_${selectedYears.join('-')}.pdf`);
     } catch (error) {
       console.error('Error generating PDF:', error);
+      alert('Hubo un error al generar el PDF. Por favor, intente de nuevo.');
     } finally {
       setIsExporting(false);
     }
+  };
+
+  const exportToCSV = () => {
+    const headers = ['Mes', ...selectedYears.flatMap(year => 
+      selectedItems.map(itemId => `${items.find(i => i.id === itemId)?.label} (${year})`)
+    )];
+    
+    const rows = chartData.map(row => [
+      row.name,
+      ...selectedYears.flatMap(year => 
+        selectedItems.map(itemId => row[`${itemId}_${year}`])
+      )
+    ]);
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(e => e.join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `Datos_Facore_${selectedYears.join('-')}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const COLORS = ['#5f2e0a', '#A0522D', '#dec290', '#6B8E23', '#8B7355', '#7B2D00'];
@@ -190,6 +235,17 @@ export const Reports = () => {
               ))}
             </div>
           </div>
+
+          <div className="h-8 w-px bg-accent/20 mx-1 hidden sm:block" />
+
+          <button 
+            onClick={exportToPDF}
+            disabled={isExporting}
+            className="btn-primary flex items-center gap-2 px-4 py-2 text-sm disabled:opacity-50"
+          >
+            {isExporting ? <Loader2 className="animate-spin" size={16} /> : <Download size={16} />}
+            Exportar PDF
+          </button>
         </div>
       </div>
 
@@ -233,17 +289,6 @@ export const Reports = () => {
                 </span>
               </div>
             </div>
-
-            {!isExporting && (
-              <button 
-                onClick={exportToPDF}
-                disabled={isExporting}
-                className="btn-primary w-full flex items-center justify-center gap-2 mt-4 disabled:opacity-50"
-              >
-                {isExporting ? <Loader2 className="animate-spin" size={18} /> : <Download size={18} />}
-                Exportar Reporte PDF
-              </button>
-            )}
           </div>
 
           {/* Growth Chart */}
@@ -288,6 +333,7 @@ export const Reports = () => {
                           stroke={color} 
                           strokeWidth={3}
                           dot={{ r: 4, fill: color }}
+                          isAnimationActive={!isExporting}
                         />
                       );
                     })
@@ -300,8 +346,15 @@ export const Reports = () => {
 
         {/* Data Table for PDF */}
         <div className="glass-card overflow-hidden">
-          <div className="p-6 border-b border-accent/10">
+          <div className="p-6 border-b border-accent/10 flex items-center justify-between">
             <h3 className="font-bold text-text text-lg">Tabla de Datos del Periodo</h3>
+            <button 
+              onClick={exportToCSV}
+              className="flex items-center gap-2 text-primary font-bold text-sm hover:underline"
+            >
+              <Download size={16} />
+              Descargar CSV
+            </button>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
