@@ -15,10 +15,13 @@ import { financialData } from '../data/financialData';
 
 export const Planning = () => {
   const [goals, setGoals] = React.useState<any[]>([]);
+  const [milestones, setMilestones] = React.useState<any[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
+  const [isMilestonesLoading, setIsMilestonesLoading] = React.useState(true);
 
   React.useEffect(() => {
     fetchGoals();
+    fetchMilestones();
   }, []);
 
   const fetchGoals = async () => {
@@ -35,8 +38,24 @@ export const Planning = () => {
     }
   };
 
+  const fetchMilestones = async () => {
+    try {
+      const response = await fetch('/api/milestones');
+      if (response.ok) {
+        const data = await response.json();
+        setMilestones(data);
+      }
+    } catch (err) {
+      console.error('Error fetching milestones:', err);
+    } finally {
+      setIsMilestonesLoading(false);
+    }
+  };
+
   const [showGoalModal, setShowGoalModal] = React.useState(false);
+  const [showMilestoneModal, setShowMilestoneModal] = React.useState<any>(null);
   const [newGoal, setNewGoal] = React.useState({ title: '', target: '', current: '', type: 'currency' });
+  const [newMilestone, setNewMilestone] = React.useState({ date: '', event: '', description: '', type: 'financial' });
   const [showDetailModal, setShowDetailModal] = React.useState<any>(null);
 
   const handleAddGoal = async (e: React.FormEvent) => {
@@ -75,6 +94,44 @@ export const Planning = () => {
     }
   };
 
+  const handleSaveMilestone = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const isEditing = typeof showMilestoneModal === 'object' && showMilestoneModal !== null;
+    const url = isEditing ? `/api/milestones/${showMilestoneModal.id}` : '/api/milestones';
+    const method = isEditing ? 'PUT' : 'POST';
+
+    try {
+      const response = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newMilestone),
+      });
+
+      if (response.ok) {
+        fetchMilestones();
+        setShowMilestoneModal(null);
+        setNewMilestone({ date: '', event: '', description: '', type: 'financial' });
+      }
+    } catch (err) {
+      console.error('Error saving milestone:', err);
+    }
+  };
+
+  const openMilestoneModal = (milestone?: any) => {
+    if (milestone) {
+      setShowMilestoneModal(milestone);
+      setNewMilestone({ 
+        date: milestone.date.split('T')[0], 
+        event: milestone.event, 
+        description: milestone.description || '', 
+        type: milestone.type || 'financial' 
+      });
+    } else {
+      setShowMilestoneModal(true);
+      setNewMilestone({ date: '', event: '', description: '', type: 'financial' });
+    }
+  };
+
   const handleDeleteGoal = async (id: number) => {
     if (!confirm('¿Estás seguro de eliminar esta meta?')) return;
     try {
@@ -85,6 +142,23 @@ export const Planning = () => {
     } catch (err) {
       console.error('Error deleting goal:', err);
     }
+  };
+
+  const handleDeleteMilestone = async (id: number) => {
+    if (!confirm('¿Estás seguro de eliminar este hito?')) return;
+    try {
+      const response = await fetch(`/api/milestones/${id}`, { method: 'DELETE' });
+      if (response.ok) {
+        fetchMilestones();
+      }
+    } catch (err) {
+      console.error('Error deleting milestone:', err);
+    }
+  };
+
+  const formatDate = (dateStr: string) => {
+    const date = new Date(dateStr);
+    return date.toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase();
   };
 
   return (
@@ -169,31 +243,137 @@ export const Planning = () => {
       </div>
 
       <div className="glass-card p-8">
-        <h3 className="font-bold text-text text-xl mb-6">Próximos Hitos</h3>
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="font-bold text-text text-xl">Próximos Hitos</h3>
+          <button 
+            onClick={() => openMilestoneModal()}
+            className="text-primary hover:bg-accent/20 p-2 rounded-lg transition-colors flex items-center gap-2 text-sm font-bold"
+          >
+            <Plus size={16} />
+            Agregar Hito
+          </button>
+        </div>
+        
         <div className="flex flex-col gap-6">
-          {[
-            { date: '15 Abr, 2026', event: 'Cierre de Trimestre Q1', type: 'financial' },
-            { date: '20 Abr, 2026', event: 'Revisión de Presupuesto Q2', type: 'meeting' },
-            { date: '01 May, 2026', event: 'Lanzamiento Nueva Estrategia', type: 'strategy' },
-          ].map((item, idx) => (
-            <div key={idx} className="flex items-center gap-4 p-4 hover:bg-accent/5 rounded-xl transition-colors">
+          {isMilestonesLoading ? (
+            <div className="flex items-center justify-center p-8">
+              <Loader2 className="animate-spin text-primary" size={32} />
+            </div>
+          ) : milestones.length === 0 ? (
+            <div className="text-center p-8 bg-accent/5 rounded-2xl border border-dashed border-accent/20">
+              <Calendar className="mx-auto text-accent mb-2" size={32} />
+              <p className="text-text-light font-medium">No hay hitos programados</p>
+            </div>
+          ) : milestones.map((item) => (
+            <div key={item.id} className="flex items-center gap-4 p-4 hover:bg-accent/5 rounded-xl transition-colors group">
               <div className="w-12 h-12 bg-accent/20 rounded-xl flex flex-col items-center justify-center text-primary">
                 <Calendar size={20} />
               </div>
               <div className="flex-1">
-                <p className="text-xs font-bold text-text-light uppercase tracking-widest">{item.date}</p>
+                <p className="text-xs font-bold text-text-light uppercase tracking-widest">{formatDate(item.date)}</p>
                 <h4 className="font-bold text-text">{item.event}</h4>
               </div>
-              <button 
-                onClick={() => setShowDetailModal(item)}
-                className="text-primary font-bold text-sm hover:underline"
-              >
-                Ver detalles
-              </button>
+              <div className="flex items-center gap-4">
+                <button 
+                  onClick={() => openMilestoneModal(item)}
+                  className="text-primary font-bold text-sm hover:underline"
+                >
+                  Editar
+                </button>
+                <button 
+                  onClick={() => setShowDetailModal(item)}
+                  className="text-primary font-bold text-sm hover:underline"
+                >
+                  Ver detalles
+                </button>
+                <button 
+                  onClick={() => handleDeleteMilestone(item.id)}
+                  className="p-2 text-danger opacity-0 group-hover:opacity-100 transition-opacity hover:bg-danger/10 rounded-lg"
+                >
+                  <X size={16} />
+                </button>
+              </div>
             </div>
           ))}
         </div>
       </div>
+
+      {/* Modal Nuevo/Editar Hito */}
+      {showMilestoneModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl animate-in fade-in zoom-in duration-200">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-2xl font-bold text-primary flex items-center gap-2">
+                <Calendar size={24} />
+                {typeof showMilestoneModal === 'object' ? 'Editar Hito' : 'Nuevo Hito'}
+              </h3>
+              <button onClick={() => setShowMilestoneModal(null)} className="text-text-light hover:text-text">
+                <X size={24} />
+              </button>
+            </div>
+            <form onSubmit={handleSaveMilestone} className="flex flex-col gap-4">
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-bold text-text-light uppercase">Evento</label>
+                <input 
+                  type="text" 
+                  required
+                  className="input-field"
+                  placeholder="Ej: Cierre de Trimestre"
+                  value={newMilestone.event}
+                  onChange={(e) => setNewMilestone({ ...newMilestone, event: e.target.value })}
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-bold text-text-light uppercase">Fecha</label>
+                <input 
+                  type="date" 
+                  required
+                  className="input-field"
+                  value={newMilestone.date}
+                  onChange={(e) => setNewMilestone({ ...newMilestone, date: e.target.value })}
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-bold text-text-light uppercase">Tipo</label>
+                <select 
+                  className="input-field"
+                  value={newMilestone.type}
+                  onChange={(e) => setNewMilestone({ ...newMilestone, type: e.target.value })}
+                >
+                  <option value="financial">Financiero</option>
+                  <option value="meeting">Reunión</option>
+                  <option value="strategy">Estrategia</option>
+                </select>
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-bold text-text-light uppercase">Descripción</label>
+                <textarea 
+                  className="input-field min-h-[100px]"
+                  placeholder="Detalles del hito..."
+                  value={newMilestone.description}
+                  onChange={(e) => setNewMilestone({ ...newMilestone, description: e.target.value })}
+                />
+              </div>
+              <div className="flex gap-4 mt-4">
+                <button 
+                  type="button"
+                  onClick={() => setShowMilestoneModal(null)}
+                  className="flex-1 py-3 px-4 bg-accent/10 text-text font-bold rounded-xl hover:bg-accent/20 transition-all"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  type="submit"
+                  className="flex-1 btn-primary flex items-center justify-center gap-2"
+                >
+                  <Check size={18} />
+                  {typeof showMilestoneModal === 'object' ? 'Guardar Cambios' : 'Crear Hito'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Modal Nueva Meta */}
       {showGoalModal && (
@@ -291,32 +471,13 @@ export const Planning = () => {
             </div>
             <div className="flex flex-col gap-4">
               <div className="p-4 bg-accent/5 rounded-2xl border border-accent/10">
-                <p className="text-xs font-bold text-text-light uppercase tracking-widest mb-1">{showDetailModal.date}</p>
+                <p className="text-xs font-bold text-text-light uppercase tracking-widest mb-1">{formatDate(showDetailModal.date)}</p>
                 <h4 className="text-xl font-bold text-text mb-2">{showDetailModal.event}</h4>
                 <p className="text-text-light text-sm leading-relaxed">
-                  Este hito representa un punto crítico en la planificación estratégica de Facore para el año 2026. 
-                  Se requiere la participación de los responsables de área para asegurar el cumplimiento de los objetivos.
+                  {showDetailModal.description || 'Sin descripción adicional para este hito.'}
                 </p>
               </div>
               
-              <div className="flex flex-col gap-2">
-                <h5 className="font-bold text-text text-sm">Tareas Pendientes:</h5>
-                <ul className="flex flex-col gap-2">
-                  <li className="flex items-center gap-2 text-sm text-text-light">
-                    <div className="w-2 h-2 bg-primary rounded-full" />
-                    Revisión de informes financieros
-                  </li>
-                  <li className="flex items-center gap-2 text-sm text-text-light">
-                    <div className="w-2 h-2 bg-primary rounded-full" />
-                    Validación de presupuestos por departamento
-                  </li>
-                  <li className="flex items-center gap-2 text-sm text-text-light">
-                    <div className="w-2 h-2 bg-primary rounded-full" />
-                    Presentación a la directiva
-                  </li>
-                </ul>
-              </div>
-
               <button 
                 onClick={() => setShowDetailModal(null)}
                 className="btn-primary w-full mt-4"

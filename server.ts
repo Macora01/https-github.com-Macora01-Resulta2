@@ -35,6 +35,7 @@ let mockUsers = [
   { id: 1, email: 'admin@facore.cl', password: '', role: 'admin' }
 ];
 let mockFinancialRecords: any[] = [];
+let mockMilestones: any[] = [];
 
 async function initDb() {
   if (isMockMode) {
@@ -86,6 +87,15 @@ async function initDb() {
           current NUMERIC NOT NULL,
           type TEXT NOT NULL,
           status TEXT NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS milestones (
+          id SERIAL PRIMARY KEY,
+          date DATE NOT NULL,
+          event TEXT NOT NULL,
+          description TEXT,
+          type TEXT,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
       `);
@@ -204,6 +214,78 @@ apiRouter.delete('/goals/:id', async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: 'Error al eliminar meta' });
+  }
+});
+
+// Milestones CRUD
+apiRouter.get('/milestones', async (req, res) => {
+  try {
+    if (isMockMode) {
+      res.json(mockMilestones.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
+    } else {
+      const result = await pool!.query('SELECT * FROM milestones ORDER BY date ASC');
+      res.json(result.rows);
+    }
+  } catch (err) {
+    res.status(500).json({ error: 'Error al obtener hitos' });
+  }
+});
+
+apiRouter.post('/milestones', async (req, res) => {
+  const { date, event, description, type } = req.body;
+  try {
+    if (isMockMode) {
+      const newMilestone = { id: Date.now(), date, event, description, type };
+      mockMilestones.push(newMilestone);
+      res.json(newMilestone);
+    } else {
+      const result = await pool!.query(
+        'INSERT INTO milestones (date, event, description, type) VALUES ($1, $2, $3, $4) RETURNING *',
+        [date, event, description, type]
+      );
+      res.json(result.rows[0]);
+    }
+  } catch (err) {
+    res.status(500).json({ error: 'Error al crear hito' });
+  }
+});
+
+apiRouter.put('/milestones/:id', async (req, res) => {
+  const { id } = req.params;
+  const { date, event, description, type } = req.body;
+  try {
+    if (isMockMode) {
+      const idx = mockMilestones.findIndex(m => m.id === Number(id));
+      if (idx >= 0) {
+        mockMilestones[idx] = { ...mockMilestones[idx], date, event, description, type };
+        res.json(mockMilestones[idx]);
+      } else {
+        res.status(404).json({ error: 'Hito no encontrado' });
+      }
+    } else {
+      const result = await pool!.query(
+        'UPDATE milestones SET date = $1, event = $2, description = $3, type = $4 WHERE id = $5 RETURNING *',
+        [date, event, description, type, id]
+      );
+      res.json(result.rows[0]);
+    }
+  } catch (err) {
+    res.status(500).json({ error: 'Error al actualizar hito' });
+  }
+});
+
+apiRouter.delete('/milestones/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    if (isMockMode) {
+      mockMilestones = mockMilestones.filter(m => m.id !== Number(id));
+      res.json({ success: true });
+    } else {
+      await pool!.query('DELETE FROM milestones WHERE id = $1', [id]);
+      res.json({ success: true });
+    }
+  } catch (err) {
+    res.status(500).json({ error: 'Error al eliminar hito' });
   }
 });
 
