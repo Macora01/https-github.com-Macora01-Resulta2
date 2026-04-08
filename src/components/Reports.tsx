@@ -36,6 +36,7 @@ export const Reports = () => {
   const [selectedItems, setSelectedItems] = React.useState<string[]>(['ventasNetas', 'resultadoMes']);
   const [data, setData] = React.useState<any[]>(financialData);
   const [isExporting, setIsExporting] = React.useState(false);
+  const [exportStatus, setExportStatus] = React.useState('');
   const reportRef = React.useRef<HTMLDivElement>(null);
 
   const items = [
@@ -114,11 +115,12 @@ export const Reports = () => {
 
   const exportToPDF = async () => {
     setIsExporting(true);
+    setExportStatus('Preparando documento...');
     
     try {
       // Scroll to top to ensure clean capture
       window.scrollTo(0, 0);
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await new Promise(resolve => setTimeout(resolve, 1500));
 
       const pdf = new jsPDF('p', 'mm', 'a4');
       const pageWidth = pdf.internal.pageSize.getWidth();
@@ -140,52 +142,78 @@ export const Reports = () => {
       pdf.text(periodText, margin, currentY);
       currentY += 15;
 
-      // 2. Capture Visual Section (Summary + Charts + AI)
-      const visualElement = document.getElementById('report-visuals');
-      if (visualElement) {
-        const canvas = await html2canvas(visualElement, {
-          scale: 2,
-          useCORS: true,
-          backgroundColor: '#FDFCF8',
-          logging: false,
-          onclone: (clonedDoc) => {
-            const el = clonedDoc.getElementById('report-visuals');
-            if (el) {
-              el.style.padding = '20px';
-              // Ensure all glass cards are visible and clean
-              const cards = el.getElementsByClassName('glass-card');
-              for (let i = 0; i < cards.length; i++) {
-                (cards[i] as HTMLElement).style.backdropFilter = 'none';
-                (cards[i] as HTMLElement).style.background = 'white';
-                (cards[i] as HTMLElement).style.boxShadow = 'none';
-                (cards[i] as HTMLElement).style.border = '1px solid #eee';
+      // Helper function to capture an element with robust settings
+      const captureElement = async (id: string, forceWidth?: string) => {
+        const el = document.getElementById(id);
+        if (!el) return null;
+        
+        try {
+          return await html2canvas(el, {
+            scale: 1.2, // Lower scale for maximum compatibility (Safari/Mobile)
+            useCORS: true,
+            backgroundColor: '#FDFCF8',
+            logging: false,
+            onclone: (clonedDoc) => {
+              const clonedEl = clonedDoc.getElementById(id);
+              if (clonedEl) {
+                if (forceWidth) {
+                  clonedEl.style.width = forceWidth;
+                  clonedEl.style.maxWidth = 'none';
+                }
+                // Cleanup styles that break html2canvas
+                clonedEl.style.backdropFilter = 'none';
+                clonedEl.style.boxShadow = 'none';
+                clonedEl.style.transition = 'none';
+                clonedEl.style.animation = 'none';
+                
+                const cards = clonedEl.getElementsByClassName('glass-card');
+                for (let i = 0; i < cards.length; i++) {
+                  const card = cards[i] as HTMLElement;
+                  card.style.backdropFilter = 'none';
+                  card.style.background = 'white';
+                  card.style.boxShadow = 'none';
+                  card.style.border = '1px solid #eee';
+                  card.style.transition = 'none';
+                }
               }
             }
-          }
-        });
-
-        const imgData = canvas.toDataURL('image/jpeg', 0.9);
-        const imgHeight = (canvas.height * contentWidth) / canvas.width;
-        
-        // Handle multi-page for the visual section if it's very long
-        let heightLeft = imgHeight;
-        let position = currentY;
-
-        pdf.addImage(imgData, 'JPEG', margin, position, contentWidth, imgHeight);
-        heightLeft -= (pdf.internal.pageSize.getHeight() - currentY - 10);
-        currentY += imgHeight + 10;
-
-        // If the visual part spans multiple pages (unlikely but possible)
-        while (heightLeft > 0) {
-          pdf.addPage();
-          position = heightLeft - imgHeight + 10;
-          pdf.addImage(imgData, 'JPEG', margin, position, contentWidth, imgHeight);
-          heightLeft -= (pdf.internal.pageSize.getHeight() - 20);
-          currentY = 20; // Reset Y for the next page
+          });
+        } catch (err) {
+          console.error(`Error capturing ${id}:`, err);
+          return null;
         }
+      };
+
+      // 2. Capture Row 1 (Summary + Charts)
+      setExportStatus('Procesando resumen y gráficos...');
+      const row1Canvas = await captureElement('row-1', '1200px');
+      if (row1Canvas) {
+        const imgData = row1Canvas.toDataURL('image/jpeg', 0.75);
+        const imgHeight = (row1Canvas.height * contentWidth) / row1Canvas.width;
+        pdf.addImage(imgData, 'JPEG', margin, currentY, contentWidth, imgHeight);
+        currentY += imgHeight + 10;
       }
 
-      // 3. Data Table using autoTable (starts on a new page if needed)
+      // 3. Capture AI Forecast
+      setExportStatus('Procesando análisis de IA...');
+      await new Promise(resolve => setTimeout(resolve, 500)); // Let the browser breathe
+      const forecastCanvas = await captureElement('forecast-card', '1200px');
+      if (forecastCanvas) {
+        const imgData = forecastCanvas.toDataURL('image/jpeg', 0.75);
+        const imgHeight = (forecastCanvas.height * contentWidth) / forecastCanvas.width;
+        
+        // Check if we need a new page
+        if (currentY + imgHeight > pdf.internal.pageSize.getHeight() - 20) {
+          pdf.addPage();
+          currentY = 20;
+        }
+        
+        pdf.addImage(imgData, 'JPEG', margin, currentY, contentWidth, imgHeight);
+        currentY += imgHeight + 10;
+      }
+
+      // 4. Data Table using autoTable
+      setExportStatus('Generando tablas de datos...');
       if (currentY > pdf.internal.pageSize.getHeight() - 60) {
         pdf.addPage();
         currentY = 20;
@@ -219,12 +247,14 @@ export const Reports = () => {
         }
       });
 
+      setExportStatus('Finalizando...');
       pdf.save(`Reporte_Facore_${selectedYears.join('_')}.pdf`);
     } catch (error) {
       console.error('Error generating PDF:', error);
       alert('Error al generar el PDF. Por favor, intente de nuevo o descargue los datos en CSV.');
     } finally {
       setIsExporting(false);
+      setExportStatus('');
     }
   };
 
@@ -312,17 +342,26 @@ export const Reports = () => {
           <button 
             onClick={exportToPDF}
             disabled={isExporting}
-            className="btn-primary flex items-center gap-2 px-4 py-2 text-sm disabled:opacity-50"
+            className="btn-primary flex items-center gap-2 px-4 py-2 text-sm disabled:opacity-50 min-w-[140px] justify-center"
           >
-            {isExporting ? <Loader2 className="animate-spin" size={16} /> : <Download size={16} />}
-            Exportar PDF
+            {isExporting ? (
+              <>
+                <Loader2 className="animate-spin" size={16} />
+                <span className="text-xs">{exportStatus || 'Exportando...'}</span>
+              </>
+            ) : (
+              <>
+                <Download size={16} />
+                Exportar PDF
+              </>
+            )}
           </button>
         </div>
       </div>
 
       <div id="report-content" className="flex flex-col gap-8 p-4">
         <div id="report-visuals" className="flex flex-col gap-8">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div id="row-1" className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Annual Summary Card */}
             <div id="summary-card" className="glass-card p-8 flex flex-col gap-6">
               <div className="flex items-center justify-between">
