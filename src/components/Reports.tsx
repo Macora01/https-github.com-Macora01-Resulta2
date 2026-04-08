@@ -116,11 +116,9 @@ export const Reports = () => {
     setIsExporting(true);
     
     try {
-      // Scroll to top to avoid capture offsets
+      // Scroll to top to ensure clean capture
       window.scrollTo(0, 0);
-      
-      // Wait for any animations to finish
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      await new Promise(resolve => setTimeout(resolve, 1000));
 
       const pdf = new jsPDF('p', 'mm', 'a4');
       const pageWidth = pdf.internal.pageSize.getWidth();
@@ -130,7 +128,7 @@ export const Reports = () => {
 
       // 1. Header
       pdf.setFontSize(22);
-      pdf.setTextColor(95, 46, 10); // Primary color #5f2e0a
+      pdf.setTextColor(95, 46, 10);
       pdf.text('Reporte Financiero Facore', margin, currentY);
       currentY += 10;
       
@@ -142,74 +140,59 @@ export const Reports = () => {
       pdf.text(periodText, margin, currentY);
       currentY += 15;
 
-      // Helper function to capture an element with better error handling and delay
-      const captureElement = async (id: string) => {
-        const el = document.getElementById(id);
-        if (!el) return null;
-        
-        try {
-          return await html2canvas(el, {
-            scale: 1.5, // Lower scale for Safari compatibility
-            useCORS: true,
-            backgroundColor: '#ffffff',
-            logging: false,
-            onclone: (clonedDoc) => {
-              const clonedEl = clonedDoc.getElementById(id);
-              if (clonedEl) {
-                clonedEl.style.backdropFilter = 'none';
-                clonedEl.style.background = 'white';
-                clonedEl.style.boxShadow = 'none';
-                clonedEl.style.border = '1px solid #eee';
-                clonedEl.style.borderRadius = '0';
+      // 2. Capture Visual Section (Summary + Charts + AI)
+      const visualElement = document.getElementById('report-visuals');
+      if (visualElement) {
+        const canvas = await html2canvas(visualElement, {
+          scale: 2,
+          useCORS: true,
+          backgroundColor: '#FDFCF8',
+          logging: false,
+          onclone: (clonedDoc) => {
+            const el = clonedDoc.getElementById('report-visuals');
+            if (el) {
+              el.style.padding = '20px';
+              // Ensure all glass cards are visible and clean
+              const cards = el.getElementsByClassName('glass-card');
+              for (let i = 0; i < cards.length; i++) {
+                (cards[i] as HTMLElement).style.backdropFilter = 'none';
+                (cards[i] as HTMLElement).style.background = 'white';
+                (cards[i] as HTMLElement).style.boxShadow = 'none';
+                (cards[i] as HTMLElement).style.border = '1px solid #eee';
               }
             }
-          });
-        } catch (err) {
-          console.warn(`Failed to capture ${id}:`, err);
-          return null;
-        }
-      };
+          }
+        });
 
-      // 2. Capture Summary Card
-      const summaryCanvas = await captureElement('summary-card');
-      if (summaryCanvas) {
-        const imgData = summaryCanvas.toDataURL('image/jpeg', 0.8);
-        const imgHeight = (summaryCanvas.height * contentWidth) / summaryCanvas.width;
-        pdf.addImage(imgData, 'JPEG', margin, currentY, contentWidth, imgHeight);
-        currentY += imgHeight + 15;
-      }
-
-      // 3. Capture Chart
-      const chartCanvas = await captureElement('chart-container');
-      if (chartCanvas) {
-        const imgData = chartCanvas.toDataURL('image/jpeg', 0.8);
-        const imgHeight = (chartCanvas.height * contentWidth) / chartCanvas.width;
+        const imgData = canvas.toDataURL('image/jpeg', 0.9);
+        const imgHeight = (canvas.height * contentWidth) / canvas.width;
         
-        if (currentY + imgHeight > pdf.internal.pageSize.getHeight() - 20) {
+        // Handle multi-page for the visual section if it's very long
+        let heightLeft = imgHeight;
+        let position = currentY;
+
+        pdf.addImage(imgData, 'JPEG', margin, position, contentWidth, imgHeight);
+        heightLeft -= (pdf.internal.pageSize.getHeight() - currentY - 10);
+        currentY += imgHeight + 10;
+
+        // If the visual part spans multiple pages (unlikely but possible)
+        while (heightLeft > 0) {
           pdf.addPage();
-          currentY = 20;
+          position = heightLeft - imgHeight + 10;
+          pdf.addImage(imgData, 'JPEG', margin, position, contentWidth, imgHeight);
+          heightLeft -= (pdf.internal.pageSize.getHeight() - 20);
+          currentY = 20; // Reset Y for the next page
         }
-        
-        pdf.addImage(imgData, 'JPEG', margin, currentY, contentWidth, imgHeight);
-        currentY += imgHeight + 15;
       }
 
-      // 4. Capture Forecast Card (if exists)
-      const forecastCanvas = await captureElement('forecast-card');
-      if (forecastCanvas) {
-        const imgData = forecastCanvas.toDataURL('image/jpeg', 0.8);
-        const imgHeight = (forecastCanvas.height * contentWidth) / forecastCanvas.width;
-        
-        if (currentY + imgHeight > pdf.internal.pageSize.getHeight() - 20) {
-          pdf.addPage();
-          currentY = 20;
-        }
-        
-        pdf.addImage(imgData, 'JPEG', margin, currentY, contentWidth, imgHeight);
-        currentY += imgHeight + 15;
+      // 3. Data Table using autoTable (starts on a new page if needed)
+      if (currentY > pdf.internal.pageSize.getHeight() - 60) {
+        pdf.addPage();
+        currentY = 20;
+      } else {
+        currentY += 5;
       }
 
-      // 5. Data Table
       const tableHeaders = [['Mes', ...selectedYears.flatMap(year => 
         selectedItems.map(itemId => `${items.find(i => i.id === itemId)?.label} (${year})`)
       )]];
@@ -239,7 +222,7 @@ export const Reports = () => {
       pdf.save(`Reporte_Facore_${selectedYears.join('_')}.pdf`);
     } catch (error) {
       console.error('Error generating PDF:', error);
-      alert('Error técnico al generar el PDF. Por favor, intente descargar los datos en CSV mientras solucionamos este inconveniente.');
+      alert('Error al generar el PDF. Por favor, intente de nuevo o descargue los datos en CSV.');
     } finally {
       setIsExporting(false);
     }
@@ -338,101 +321,103 @@ export const Reports = () => {
       </div>
 
       <div id="report-content" className="flex flex-col gap-8 p-4">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Annual Summary Card */}
-          <div id="summary-card" className="glass-card p-8 flex flex-col gap-6">
-            <div className="flex items-center justify-between">
-              <h3 className="font-bold text-text text-xl">
-                Resumen de Periodo {selectedYears.length > 1 ? `(${selectedYears[0]}-${selectedYears[selectedYears.length-1]})` : selectedYears[0]}
-              </h3>
-              <div className="p-2 bg-primary/10 text-primary rounded-lg">
-                <FileText size={24} />
+        <div id="report-visuals" className="flex flex-col gap-8">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Annual Summary Card */}
+            <div id="summary-card" className="glass-card p-8 flex flex-col gap-6">
+              <div className="flex items-center justify-between">
+                <h3 className="font-bold text-text text-xl">
+                  Resumen de Periodo {selectedYears.length > 1 ? `(${selectedYears[0]}-${selectedYears[selectedYears.length-1]})` : selectedYears[0]}
+                </h3>
+                <div className="p-2 bg-primary/10 text-primary rounded-lg">
+                  <FileText size={24} />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-6">
+                <div className="flex flex-col gap-1">
+                  <span className="text-xs text-text-light font-bold uppercase tracking-wider">Ventas Totales</span>
+                  <span className="text-xl font-bold text-text">{formatCurrency(totals.ventasNetas)}</span>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <span className="text-xs text-text-light font-bold uppercase tracking-wider">Resultado Neto</span>
+                  <span className={cn(
+                    "text-xl font-bold",
+                    totals.resultadoMes >= 0 ? "text-success" : "text-danger"
+                  )}>
+                    {formatCurrency(totals.resultadoMes)}
+                  </span>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <span className="text-xs text-text-light font-bold uppercase tracking-wider">Margen Operativo</span>
+                  <span className="text-xl font-bold text-primary">
+                    {totals.ventasNetas > 0 ? ((totals.resultadoMes / totals.ventasNetas) * 100).toFixed(1) : '0.0'}%
+                  </span>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <span className="text-xs text-text-light font-bold uppercase tracking-wider">Eficiencia de Costos</span>
+                  <span className="text-xl font-bold text-secondary">
+                    {totals.ventasNetas > 0 ? ((totals.costo / totals.ventasNetas) * 100).toFixed(1) : '0.0'}%
+                  </span>
+                </div>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-6">
-              <div className="flex flex-col gap-1">
-                <span className="text-xs text-text-light font-bold uppercase tracking-wider">Ventas Totales</span>
-                <span className="text-xl font-bold text-text">{formatCurrency(totals.ventasNetas)}</span>
-              </div>
-              <div className="flex flex-col gap-1">
-                <span className="text-xs text-text-light font-bold uppercase tracking-wider">Resultado Neto</span>
-                <span className={cn(
-                  "text-xl font-bold",
-                  totals.resultadoMes >= 0 ? "text-success" : "text-danger"
-                )}>
-                  {formatCurrency(totals.resultadoMes)}
-                </span>
-              </div>
-              <div className="flex flex-col gap-1">
-                <span className="text-xs text-text-light font-bold uppercase tracking-wider">Margen Operativo</span>
-                <span className="text-xl font-bold text-primary">
-                  {totals.ventasNetas > 0 ? ((totals.resultadoMes / totals.ventasNetas) * 100).toFixed(1) : '0.0'}%
-                </span>
-              </div>
-              <div className="flex flex-col gap-1">
-                <span className="text-xs text-text-light font-bold uppercase tracking-wider">Eficiencia de Costos</span>
-                <span className="text-xl font-bold text-secondary">
-                  {totals.ventasNetas > 0 ? ((totals.costo / totals.ventasNetas) * 100).toFixed(1) : '0.0'}%
-                </span>
+            {/* Growth Chart */}
+            <div id="chart-container" className="glass-card p-6">
+              <h3 className="font-bold text-text text-lg mb-6">Comparativa Mensual Detallada</h3>
+              <div className="h-[300px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#dec29040" />
+                    <XAxis 
+                      dataKey="name" 
+                      axisLine={false} 
+                      tickLine={false} 
+                      tick={{ fill: '#8D6E63', fontSize: 12 }}
+                    />
+                    <YAxis 
+                      axisLine={false} 
+                      tickLine={false} 
+                      tick={{ fill: '#8D6E63', fontSize: 12 }}
+                      tickFormatter={(value) => `$${(value / 1000000).toFixed(0)}M`}
+                    />
+                    <Tooltip 
+                      contentStyle={{ 
+                        backgroundColor: '#FFFFFF', 
+                        borderRadius: '12px', 
+                        border: 'none', 
+                        boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)' 
+                      }}
+                      formatter={(value: number) => [formatCurrency(value), '']}
+                    />
+                    <Legend verticalAlign="top" align="right" iconType="circle" />
+                    {selectedYears.map((year, yIdx) => (
+                      selectedItems.map((itemId, iIdx) => {
+                        const item = items.find(i => i.id === itemId);
+                        const color = COLORS[(yIdx * selectedItems.length + iIdx) % COLORS.length];
+                        return (
+                          <Line 
+                            key={`${itemId}_${year}`}
+                            type="monotone" 
+                            dataKey={`${itemId}_${year}`} 
+                            name={`${item?.label} (${year})`}
+                            stroke={color} 
+                            strokeWidth={3}
+                            dot={{ r: 4, fill: color }}
+                            isAnimationActive={!isExporting}
+                          />
+                        );
+                      })
+                    ))}
+                  </LineChart>
+                </ResponsiveContainer>
               </div>
             </div>
           </div>
 
-          {/* Growth Chart */}
-          <div id="chart-container" className="glass-card p-6">
-            <h3 className="font-bold text-text text-lg mb-6">Comparativa Mensual Detallada</h3>
-            <div className="h-[300px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#dec29040" />
-                  <XAxis 
-                    dataKey="name" 
-                    axisLine={false} 
-                    tickLine={false} 
-                    tick={{ fill: '#8D6E63', fontSize: 12 }}
-                  />
-                  <YAxis 
-                    axisLine={false} 
-                    tickLine={false} 
-                    tick={{ fill: '#8D6E63', fontSize: 12 }}
-                    tickFormatter={(value) => `$${(value / 1000000).toFixed(0)}M`}
-                  />
-                  <Tooltip 
-                    contentStyle={{ 
-                      backgroundColor: '#FFFFFF', 
-                      borderRadius: '12px', 
-                      border: 'none', 
-                      boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)' 
-                    }}
-                    formatter={(value: number) => [formatCurrency(value), '']}
-                  />
-                  <Legend verticalAlign="top" align="right" iconType="circle" />
-                  {selectedYears.map((year, yIdx) => (
-                    selectedItems.map((itemId, iIdx) => {
-                      const item = items.find(i => i.id === itemId);
-                      const color = COLORS[(yIdx * selectedItems.length + iIdx) % COLORS.length];
-                      return (
-                        <Line 
-                          key={`${itemId}_${year}`}
-                          type="monotone" 
-                          dataKey={`${itemId}_${year}`} 
-                          name={`${item?.label} (${year})`}
-                          stroke={color} 
-                          strokeWidth={3}
-                          dot={{ r: 4, fill: color }}
-                          isAnimationActive={!isExporting}
-                        />
-                      );
-                    })
-                  ))}
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
+          <AIForecast data={data} isExporting={isExporting} />
         </div>
-
-        <AIForecast data={data} isExporting={isExporting} />
 
         {/* Data Table for PDF */}
         <div className="glass-card overflow-hidden">
