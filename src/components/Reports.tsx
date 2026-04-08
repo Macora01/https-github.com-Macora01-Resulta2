@@ -27,6 +27,7 @@ import { formatCurrency, cn } from '../lib/utils';
 import { financialData, MONTHS } from '../data/financialData';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
+import autoTable from 'jspdf-autotable';
 
 export const Reports = () => {
   const [selectedYears, setSelectedYears] = React.useState<number[]>([2025]);
@@ -110,66 +111,107 @@ export const Reports = () => {
   }, [selectedYears, data]);
 
   const exportToPDF = async () => {
-    if (!reportRef.current) return;
     setIsExporting(true);
     
     try {
-      // Small delay to ensure any layout shifts or animations are settled
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const margin = 15;
+      const contentWidth = pageWidth - (margin * 2);
+      let currentY = 20;
 
-      const element = reportRef.current;
-      const canvas = await html2canvas(element, {
-        scale: 1.5, // Slightly lower scale for better compatibility and performance
-        useCORS: true,
-        logging: false,
-        backgroundColor: '#FDFCF8',
-        windowWidth: element.scrollWidth,
-        windowHeight: element.scrollHeight,
-        onclone: (clonedDoc) => {
-          const clonedElement = clonedDoc.getElementById('report-content');
-          if (clonedElement) {
-            clonedElement.style.padding = '40px';
-            clonedElement.style.background = '#FDFCF8';
+      // 1. Header
+      pdf.setFontSize(20);
+      pdf.setTextColor(95, 46, 10); // Primary color #5f2e0a
+      pdf.text('Reporte Financiero Detallado', margin, currentY);
+      currentY += 10;
+      
+      pdf.setFontSize(12);
+      pdf.setTextColor(100, 100, 100);
+      const periodText = selectedYears.length > 1 
+        ? `Periodo: ${Math.min(...selectedYears)} - ${Math.max(...selectedYears)}`
+        : `Año: ${selectedYears[0]}`;
+      pdf.text(periodText, margin, currentY);
+      currentY += 15;
+
+      // Helper function to capture an element
+      const captureElement = async (id: string) => {
+        const el = document.getElementById(id);
+        if (!el) return null;
+        return await html2canvas(el, {
+          scale: 2,
+          useCORS: true,
+          backgroundColor: '#ffffff',
+          logging: false,
+          onclone: (clonedDoc) => {
+            const clonedEl = clonedDoc.getElementById(id);
+            if (clonedEl) {
+              clonedEl.style.backdropFilter = 'none';
+              clonedEl.style.background = 'white';
+              clonedEl.style.boxShadow = 'none';
+              clonedEl.style.border = '1px solid #eee';
+            }
           }
-          // Remove backdrop-blur which can cause issues with html2canvas
-          const glassCards = clonedDoc.getElementsByClassName('glass-card');
-          for (let i = 0; i < glassCards.length; i++) {
-            (glassCards[i] as HTMLElement).style.backdropFilter = 'none';
-            (glassCards[i] as HTMLElement).style.background = 'white';
-          }
+        });
+      };
+
+      // 2. Capture Summary Card
+      const summaryCanvas = await captureElement('summary-card');
+      if (summaryCanvas) {
+        const imgData = summaryCanvas.toDataURL('image/jpeg', 0.9);
+        const imgHeight = (summaryCanvas.height * contentWidth) / summaryCanvas.width;
+        pdf.addImage(imgData, 'JPEG', margin, currentY, contentWidth, imgHeight);
+        currentY += imgHeight + 15;
+      }
+
+      // 3. Capture Chart
+      const chartCanvas = await captureElement('chart-container');
+      if (chartCanvas) {
+        const imgData = chartCanvas.toDataURL('image/jpeg', 0.9);
+        const imgHeight = (chartCanvas.height * contentWidth) / chartCanvas.width;
+        
+        // Check if we need a new page for the chart
+        if (currentY + imgHeight > pdf.internal.pageSize.getHeight() - 20) {
+          pdf.addPage();
+          currentY = 20;
+        }
+        
+        pdf.addImage(imgData, 'JPEG', margin, currentY, contentWidth, imgHeight);
+        currentY += imgHeight + 15;
+      }
+
+      // 4. Data Table using autoTable
+      const tableHeaders = [['Mes', ...selectedYears.flatMap(year => 
+        selectedItems.map(itemId => `${items.find(i => i.id === itemId)?.label} (${year})`)
+      )]];
+
+      const tableRows = chartData.map(row => [
+        row.name,
+        ...selectedYears.flatMap(year => 
+          selectedItems.map(itemId => formatCurrency(row[`${itemId}_${year}`]))
+        )
+      ]);
+
+      autoTable(pdf, {
+        startY: currentY,
+        head: tableHeaders,
+        body: tableRows,
+        margin: { left: margin, right: margin },
+        styles: { fontSize: 8, cellPadding: 2 },
+        headStyles: { fillColor: [95, 46, 10], textColor: [255, 255, 255] },
+        alternateRowStyles: { fillColor: [245, 245, 240] },
+        didDrawPage: (data) => {
+          // Add footer with page number
+          const str = 'Página ' + pdf.getNumberOfPages();
+          pdf.setFontSize(10);
+          pdf.text(str, pageWidth - margin - 20, pdf.internal.pageSize.getHeight() - 10);
         }
       });
-      
-      if (canvas.width === 0 || canvas.height === 0) {
-        throw new Error('El canvas no tiene dimensiones válidas.');
-      }
-
-      const imgData = canvas.toDataURL('image/jpeg', 0.85); // Use JPEG for smaller size
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = pdf.internal.pageSize.getHeight();
-      
-      const margin = 10;
-      const imgWidth = pdfWidth - (margin * 2);
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      
-      let heightLeft = imgHeight;
-      let position = margin;
-
-      pdf.addImage(imgData, 'JPEG', margin, position, imgWidth, imgHeight);
-      heightLeft -= (pdfHeight - margin * 2);
-
-      while (heightLeft > 0) {
-        pdf.addPage();
-        position = heightLeft - imgHeight + margin;
-        pdf.addImage(imgData, 'JPEG', margin, position, imgWidth, imgHeight);
-        heightLeft -= (pdfHeight - margin * 2);
-      }
 
       pdf.save(`Reporte_Facore_${selectedYears.join('_')}.pdf`);
     } catch (error) {
       console.error('Error generating PDF:', error);
-      alert('Error al generar el PDF. Por favor, intente de nuevo o use un navegador diferente.');
+      alert('Error al generar el PDF. Por favor, intente de nuevo o descargue los datos en CSV.');
     } finally {
       setIsExporting(false);
     }
@@ -267,10 +309,10 @@ export const Reports = () => {
         </div>
       </div>
 
-      <div ref={reportRef} id="report-content" className="flex flex-col gap-8 p-4">
+      <div id="report-content" className="flex flex-col gap-8 p-4">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Annual Summary Card */}
-          <div className="glass-card p-8 flex flex-col gap-6">
+          <div id="summary-card" className="glass-card p-8 flex flex-col gap-6">
             <div className="flex items-center justify-between">
               <h3 className="font-bold text-text text-xl">
                 Resumen de Periodo {selectedYears.length > 1 ? `(${selectedYears[0]}-${selectedYears[selectedYears.length-1]})` : selectedYears[0]}
@@ -310,7 +352,7 @@ export const Reports = () => {
           </div>
 
           {/* Growth Chart */}
-          <div className="glass-card p-6">
+          <div id="chart-container" className="glass-card p-6">
             <h3 className="font-bold text-text text-lg mb-6">Comparativa Mensual Detallada</h3>
             <div className="h-[300px] w-full">
               <ResponsiveContainer width="100%" height="100%">
