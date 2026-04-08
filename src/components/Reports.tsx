@@ -199,32 +199,38 @@ export const Reports = () => {
         }
       };
 
-      // 2. Capture Summary and Chart (Row 1)
-      setExportStatus('Capturando resumen y gráficos...');
-      const summaryCanvas = await captureElement('summary-card', '500px');
-      const chartCanvas = await captureElement('chart-container', '800px');
-
-      if (summaryCanvas && chartCanvas) {
-        const summaryW = contentWidth * 0.38;
-        const chartW = contentWidth * 0.58;
-        const gap = contentWidth * 0.04;
-        
-        const summaryH = (summaryCanvas.height * summaryW) / summaryCanvas.width;
-        const chartH = (chartCanvas.height * chartW) / chartCanvas.width;
-        
-        const rowHeight = Math.max(summaryH, chartH);
-        
-        pdf.addImage(summaryCanvas.toDataURL('image/jpeg', 0.95), 'JPEG', margin, currentY, summaryW, summaryH);
-        pdf.addImage(chartCanvas.toDataURL('image/jpeg', 0.95), 'JPEG', margin + summaryW + gap, currentY, chartW, chartH);
-        
-        currentY += rowHeight + 12;
+      // 2. Capture Summary Card
+      setExportStatus('Capturando resumen...');
+      const summaryCanvas = await captureElement('summary-card', '1000px');
+      if (summaryCanvas) {
+        const imgData = summaryCanvas.toDataURL('image/jpeg', 0.95);
+        const imgHeight = (summaryCanvas.height * contentWidth) / summaryCanvas.width;
+        pdf.addImage(imgData, 'JPEG', margin, currentY, contentWidth, imgHeight);
+        currentY += imgHeight + 10;
       }
 
-      // 3. Capture AI Forecast (Row 2)
+      // 3. Capture Chart
+      setExportStatus('Capturando gráficos...');
+      const chartCanvas = await captureElement('chart-container', '1000px');
+      if (chartCanvas) {
+        const imgData = chartCanvas.toDataURL('image/jpeg', 0.95);
+        const imgHeight = (chartCanvas.height * contentWidth) / chartCanvas.width;
+        
+        // Check if it fits on current page
+        if (currentY + imgHeight > pageHeight - 20) {
+          pdf.addPage();
+          currentY = 20;
+        }
+        
+        pdf.addImage(imgData, 'JPEG', margin, currentY, contentWidth, imgHeight);
+        currentY += imgHeight + 10;
+      }
+
+      // 4. Capture AI Forecast
       setExportStatus('Capturando análisis de IA...');
       const forecastCanvas = await captureElement('forecast-card', '1200px');
-      
       if (forecastCanvas) {
+        const imgData = forecastCanvas.toDataURL('image/jpeg', 0.95);
         const imgHeight = (forecastCanvas.height * contentWidth) / forecastCanvas.width;
         
         // Check if it fits on current page
@@ -233,11 +239,11 @@ export const Reports = () => {
           currentY = 20;
         }
         
-        pdf.addImage(forecastCanvas.toDataURL('image/jpeg', 0.95), 'JPEG', margin, currentY, contentWidth, imgHeight);
-        currentY += imgHeight + 12;
+        pdf.addImage(imgData, 'JPEG', margin, currentY, contentWidth, imgHeight);
+        currentY += imgHeight + 10;
       }
 
-      // 4. Data Table
+      // 5. Data Table
       setExportStatus('Generando tablas...');
       
       // Check if we should start on a new page
