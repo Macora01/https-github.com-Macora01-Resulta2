@@ -115,43 +115,61 @@ export const Reports = () => {
     
     try {
       // Small delay to ensure any layout shifts or animations are settled
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await new Promise(resolve => setTimeout(resolve, 1000));
 
-      const canvas = await html2canvas(reportRef.current, {
-        scale: 2,
+      const element = reportRef.current;
+      const canvas = await html2canvas(element, {
+        scale: 1.5, // Slightly lower scale for better compatibility and performance
         useCORS: true,
         logging: false,
         backgroundColor: '#FDFCF8',
-        windowWidth: reportRef.current.scrollWidth,
-        windowHeight: reportRef.current.scrollHeight
+        windowWidth: element.scrollWidth,
+        windowHeight: element.scrollHeight,
+        onclone: (clonedDoc) => {
+          const clonedElement = clonedDoc.getElementById('report-content');
+          if (clonedElement) {
+            clonedElement.style.padding = '40px';
+            clonedElement.style.background = '#FDFCF8';
+          }
+          // Remove backdrop-blur which can cause issues with html2canvas
+          const glassCards = clonedDoc.getElementsByClassName('glass-card');
+          for (let i = 0; i < glassCards.length; i++) {
+            (glassCards[i] as HTMLElement).style.backdropFilter = 'none';
+            (glassCards[i] as HTMLElement).style.background = 'white';
+          }
+        }
       });
       
-      const imgData = canvas.toDataURL('image/png');
+      if (canvas.width === 0 || canvas.height === 0) {
+        throw new Error('El canvas no tiene dimensiones válidas.');
+      }
+
+      const imgData = canvas.toDataURL('image/jpeg', 0.85); // Use JPEG for smaller size
       const pdf = new jsPDF('p', 'mm', 'a4');
       const pdfWidth = pdf.internal.pageSize.getWidth();
       const pdfHeight = pdf.internal.pageSize.getHeight();
       
-      // Calculate dimensions to fit the whole report on one or more pages
-      const imgWidth = pdfWidth - 20; // 10mm margins
+      const margin = 10;
+      const imgWidth = pdfWidth - (margin * 2);
       const imgHeight = (canvas.height * imgWidth) / canvas.width;
       
       let heightLeft = imgHeight;
-      let position = 10; // Start 10mm from top
+      let position = margin;
 
-      pdf.addImage(imgData, 'PNG', 10, position, imgWidth, imgHeight);
-      heightLeft -= (pdfHeight - 20);
+      pdf.addImage(imgData, 'JPEG', margin, position, imgWidth, imgHeight);
+      heightLeft -= (pdfHeight - margin * 2);
 
       while (heightLeft > 0) {
-        position = heightLeft - imgHeight + 10;
         pdf.addPage();
-        pdf.addImage(imgData, 'PNG', 10, position, imgWidth, imgHeight);
-        heightLeft -= (pdfHeight - 20);
+        position = heightLeft - imgHeight + margin;
+        pdf.addImage(imgData, 'JPEG', margin, position, imgWidth, imgHeight);
+        heightLeft -= (pdfHeight - margin * 2);
       }
 
-      pdf.save(`Reporte_Facore_${selectedYears.join('-')}.pdf`);
+      pdf.save(`Reporte_Facore_${selectedYears.join('_')}.pdf`);
     } catch (error) {
       console.error('Error generating PDF:', error);
-      alert('Hubo un error al generar el PDF. Por favor, intente de nuevo.');
+      alert('Error al generar el PDF. Por favor, intente de nuevo o use un navegador diferente.');
     } finally {
       setIsExporting(false);
     }
@@ -249,7 +267,7 @@ export const Reports = () => {
         </div>
       </div>
 
-      <div ref={reportRef} className="flex flex-col gap-8 p-4">
+      <div ref={reportRef} id="report-content" className="flex flex-col gap-8 p-4">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Annual Summary Card */}
           <div className="glass-card p-8 flex flex-col gap-6">
