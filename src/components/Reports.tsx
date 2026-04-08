@@ -115,12 +115,12 @@ export const Reports = () => {
 
   const exportToPDF = async () => {
     setIsExporting(true);
-    setExportStatus('Preparando documento...');
+    setExportStatus('Iniciando exportación...');
     
     try {
       // Scroll to top to ensure clean capture
       window.scrollTo(0, 0);
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      await new Promise(resolve => setTimeout(resolve, 2000));
 
       const pdf = new jsPDF('p', 'mm', 'a4');
       const pageWidth = pdf.internal.pageSize.getWidth();
@@ -143,33 +143,38 @@ export const Reports = () => {
       currentY += 15;
 
       // Helper function to capture an element with robust settings
-      const captureElement = async (id: string, forceWidth?: string) => {
+      const captureElement = async (id: string, width?: string) => {
         const el = document.getElementById(id);
-        if (!el) return null;
+        if (!el) {
+          console.warn(`Element with id ${id} not found`);
+          return null;
+        }
         
         try {
           return await html2canvas(el, {
-            scale: 1.2, // Lower scale for maximum compatibility (Safari/Mobile)
+            scale: 1.5,
             useCORS: true,
-            backgroundColor: '#FDFCF8',
+            backgroundColor: '#ffffff',
             logging: false,
             onclone: (clonedDoc) => {
               const clonedEl = clonedDoc.getElementById(id);
               if (clonedEl) {
-                if (forceWidth) {
-                  clonedEl.style.width = forceWidth;
+                if (width) {
+                  clonedEl.style.width = width;
                   clonedEl.style.maxWidth = 'none';
                 }
-                // Cleanup styles that break html2canvas
-                clonedEl.style.backdropFilter = 'none';
+                (clonedEl.style as any).backdropFilter = 'none';
+                (clonedEl.style as any).webkitBackdropFilter = 'none';
                 clonedEl.style.boxShadow = 'none';
+                clonedEl.style.background = 'white';
                 clonedEl.style.transition = 'none';
                 clonedEl.style.animation = 'none';
                 
                 const cards = clonedEl.getElementsByClassName('glass-card');
                 for (let i = 0; i < cards.length; i++) {
                   const card = cards[i] as HTMLElement;
-                  card.style.backdropFilter = 'none';
+                  (card.style as any).backdropFilter = 'none';
+                  (card.style as any).webkitBackdropFilter = 'none';
                   card.style.background = 'white';
                   card.style.boxShadow = 'none';
                   card.style.border = '1px solid #eee';
@@ -184,25 +189,23 @@ export const Reports = () => {
         }
       };
 
-      // 2. Capture Row 1 (Summary + Charts)
-      setExportStatus('Procesando resumen y gráficos...');
-      const row1Canvas = await captureElement('row-1', '1200px');
-      if (row1Canvas) {
-        const imgData = row1Canvas.toDataURL('image/jpeg', 0.75);
-        const imgHeight = (row1Canvas.height * contentWidth) / row1Canvas.width;
+      // 2. Capture Summary Card
+      setExportStatus('Capturando resumen...');
+      const summaryCanvas = await captureElement('summary-card', '800px');
+      if (summaryCanvas) {
+        const imgData = summaryCanvas.toDataURL('image/jpeg', 0.8);
+        const imgHeight = (summaryCanvas.height * contentWidth) / summaryCanvas.width;
         pdf.addImage(imgData, 'JPEG', margin, currentY, contentWidth, imgHeight);
         currentY += imgHeight + 10;
       }
 
-      // 3. Capture AI Forecast
-      setExportStatus('Procesando análisis de IA...');
-      await new Promise(resolve => setTimeout(resolve, 500)); // Let the browser breathe
-      const forecastCanvas = await captureElement('forecast-card', '1200px');
-      if (forecastCanvas) {
-        const imgData = forecastCanvas.toDataURL('image/jpeg', 0.75);
-        const imgHeight = (forecastCanvas.height * contentWidth) / forecastCanvas.width;
+      // 3. Capture Chart
+      setExportStatus('Capturando gráficos...');
+      const chartCanvas = await captureElement('chart-container', '800px');
+      if (chartCanvas) {
+        const imgData = chartCanvas.toDataURL('image/jpeg', 0.8);
+        const imgHeight = (chartCanvas.height * contentWidth) / chartCanvas.width;
         
-        // Check if we need a new page
         if (currentY + imgHeight > pdf.internal.pageSize.getHeight() - 20) {
           pdf.addPage();
           currentY = 20;
@@ -212,8 +215,24 @@ export const Reports = () => {
         currentY += imgHeight + 10;
       }
 
-      // 4. Data Table using autoTable
-      setExportStatus('Generando tablas de datos...');
+      // 4. Capture AI Forecast
+      setExportStatus('Capturando análisis de IA...');
+      const forecastCanvas = await captureElement('forecast-card', '1000px');
+      if (forecastCanvas) {
+        const imgData = forecastCanvas.toDataURL('image/jpeg', 0.8);
+        const imgHeight = (forecastCanvas.height * contentWidth) / forecastCanvas.width;
+        
+        if (currentY + imgHeight > pdf.internal.pageSize.getHeight() - 20) {
+          pdf.addPage();
+          currentY = 20;
+        }
+        
+        pdf.addImage(imgData, 'JPEG', margin, currentY, contentWidth, imgHeight);
+        currentY += imgHeight + 10;
+      }
+
+      // 5. Data Table using autoTable
+      setExportStatus('Generando tablas...');
       if (currentY > pdf.internal.pageSize.getHeight() - 60) {
         pdf.addPage();
         currentY = 20;
@@ -361,9 +380,9 @@ export const Reports = () => {
 
       <div id="report-content" className="flex flex-col gap-8 p-4">
         <div id="report-visuals" className="flex flex-col gap-8">
-          <div id="row-1" className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Annual Summary Card */}
-            <div id="summary-card" className="glass-card p-8 flex flex-col gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Annual Summary Card */}
+          <div id="summary-card" className="glass-card p-8 flex flex-col gap-6">
               <div className="flex items-center justify-between">
                 <h3 className="font-bold text-text text-xl">
                   Resumen de Periodo {selectedYears.length > 1 ? `(${selectedYears[0]}-${selectedYears[selectedYears.length-1]})` : selectedYears[0]}
