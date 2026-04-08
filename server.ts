@@ -472,7 +472,12 @@ apiRouter.post('/upload-pdf', authenticateToken, upload.single('file'), async (r
           const upperLine = line.toUpperCase();
 
           // Detener el procesamiento si llegamos a la sección de TOTALES
-          if (upperLine.includes('TOTALES') || (upperLine.includes('TOTAL') && !upperLine.includes('VENTA') && !upperLine.includes('COSTO') && !upperLine.includes('GASTO') && !upperLine.includes('RESULTADO'))) {
+          // Buscamos variaciones de TOTALES (T0TALES, TOTALE, etc.)
+          const isTotalSection = upperLine.includes('TOTALES') || 
+                                upperLine.includes('T0TALES') || 
+                                (upperLine.includes('TOTAL') && !upperLine.includes('VENTA') && !upperLine.includes('COSTO') && !upperLine.includes('GASTO') && !upperLine.includes('RESULTADO'));
+          
+          if (isTotalSection) {
             console.log('🛑 Sección de TOTALES detectada. Finalizando extracción de tabla.');
             break;
           }
@@ -481,7 +486,6 @@ apiRouter.post('/upload-pdf', authenticateToken, upload.single('file'), async (r
           const mIdx = months.findIndex(m => {
             const mUpper = m.toUpperCase();
             if (upperLine === mUpper || upperLine.startsWith(mUpper + ' ') || upperLine.startsWith(mUpper + '\t')) return true;
-            // Soporte para errores comunes de OCR
             if (mUpper === 'OCTUBRE' && (upperLine.includes('OCUBRE') || upperLine.includes('0CUBRE'))) return true;
             if (mUpper === 'SEPTIEMBRE' && upperLine.includes('SETIEMBRE')) return true;
             return false;
@@ -497,7 +501,7 @@ apiRouter.post('/upload-pdf', authenticateToken, upload.single('file'), async (r
             let gOps: number[] = [];
             let rMes: number[] = [];
 
-            // Función para verificar si una línea es un encabezado de mes (usada para romper el loop de búsqueda de datos)
+            // Función para verificar si una línea es un encabezado de mes
             const isMonthHeader = (l: string) => {
               const u = l.toUpperCase();
               return months.some(m => {
@@ -514,22 +518,39 @@ apiRouter.post('/upload-pdf', authenticateToken, upload.single('file'), async (r
               const dataLine = lines[i + j];
               const upperDataLine = dataLine.toUpperCase();
               
-              // Si encontramos otro mes o llegamos a TOTALES, paramos la búsqueda para este mes
               if (isMonthHeader(dataLine)) break;
-              if (upperDataLine.includes('TOTALES') || (upperDataLine.includes('TOTAL') && !upperDataLine.includes('VENTA') && !upperDataLine.includes('COSTO') && !upperDataLine.includes('GASTO') && !upperDataLine.includes('RESULTADO'))) break;
+              
+              // Si la línea contiene TOTAL y no es una de nuestras etiquetas principales, es el fin de los datos del mes
+              const isDataTotalLine = upperDataLine.includes('TOTAL') && 
+                                     !upperDataLine.includes('VENTA') && 
+                                     !upperDataLine.includes('COSTO') && 
+                                     !upperDataLine.includes('GASTO') && 
+                                     !upperDataLine.includes('RESULTADO');
+              
+              if (upperDataLine.includes('TOTALES') || isDataTotalLine) break;
 
               const vals = getValuesFromLine(dataLine);
               if (vals.length > 0) {
+                // Solo asignamos si la línea NO parece ser una línea de totales acumulados
+                const isAccumulatedTotal = upperDataLine.includes('TOTAL') && (vals.length === years.length);
+                
                 if (upperDataLine.includes('VENTA') || upperDataLine.includes('INGRESO')) {
-                  vNetas = vals; dataFoundCount = Math.max(dataFoundCount, 1);
+                  if (!upperDataLine.includes('TOTAL')) {
+                    vNetas = vals; dataFoundCount = Math.max(dataFoundCount, 1);
+                  }
                 } else if (upperDataLine.includes('COSTO')) {
-                  cVentas = vals; dataFoundCount = Math.max(dataFoundCount, 2);
+                  if (!upperDataLine.includes('TOTAL')) {
+                    cVentas = vals; dataFoundCount = Math.max(dataFoundCount, 2);
+                  }
                 } else if (upperDataLine.includes('GASTO') || upperDataLine.includes('ADMINISTRACI')) {
-                  gOps = vals; dataFoundCount = Math.max(dataFoundCount, 3);
+                  if (!upperDataLine.includes('TOTAL')) {
+                    gOps = vals; dataFoundCount = Math.max(dataFoundCount, 3);
+                  }
                 } else if (upperDataLine.includes('RESULTADO') || upperDataLine.includes('UTILIDAD') || upperDataLine.includes('MARGEN')) {
-                  rMes = vals; dataFoundCount = Math.max(dataFoundCount, 4);
-                } else {
-                  // Si no hay etiqueta, usamos el orden lógico
+                  if (!upperDataLine.includes('TOTAL')) {
+                    rMes = vals; dataFoundCount = Math.max(dataFoundCount, 4);
+                  }
+                } else if (!upperDataLine.includes('TOTAL')) {
                   if (dataFoundCount === 0) { vNetas = vals; dataFoundCount++; }
                   else if (dataFoundCount === 1) { cVentas = vals; dataFoundCount++; }
                   else if (dataFoundCount === 2) { gOps = vals; dataFoundCount++; }
@@ -540,7 +561,6 @@ apiRouter.post('/upload-pdf', authenticateToken, upload.single('file'), async (r
             }
 
             // Guardar registros para cada año con ALINEACIÓN DESDE LA DERECHA
-            // Esto es crucial porque los años más antiguos (izquierda) suelen estar vacíos en el PDF
             years.forEach((y, idx) => {
               const vIdx = idx - (years.length - vNetas.length);
               const cIdx = idx - (years.length - cVentas.length);
