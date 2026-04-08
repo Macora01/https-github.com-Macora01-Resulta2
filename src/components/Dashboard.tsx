@@ -144,29 +144,42 @@ export const Dashboard = () => {
   }, [selectedYears, selectedItems, selectedPeriod, data]);
 
   const totals = React.useMemo(() => {
-    const lastYear = selectedYears[selectedYears.length - 1];
-    const currentYearData = data.filter(d => d.year === lastYear);
+    const currentYearData = data.filter(d => selectedYears.includes(d.year));
     
     const currentTotals = currentYearData.reduce((acc, curr) => ({
-      ventasNetas: acc.ventasNetas + curr.ventasNetas,
-      costo: acc.costo + curr.costo,
-      gastos: acc.gastos + curr.gastos,
-      resultadoMes: acc.resultadoMes + curr.resultadoMes,
+      ventasNetas: acc.ventasNetas + Number(curr.ventasNetas || 0),
+      costo: acc.costo + Number(curr.costo || 0),
+      gastos: acc.gastos + Number(curr.gastos || 0),
+      resultadoMes: acc.resultadoMes + Number(curr.resultadoMes || 0),
     }), { ventasNetas: 0, costo: 0, gastos: 0, resultadoMes: 0 });
 
-    let comparison = { ventas: 0, resultado: 0 };
-    const prevYearData = data.filter(d => d.year === lastYear - 1);
-    if (prevYearData.length > 0) {
-      const prevTotals = prevYearData.reduce((acc, curr) => ({
-        ventasNetas: acc.ventasNetas + curr.ventasNetas,
-        resultadoMes: acc.resultadoMes + curr.resultadoMes,
-      }), { ventasNetas: 0, resultadoMes: 0 });
-      
-      comparison.ventas = prevTotals.ventasNetas ? ((currentTotals.ventasNetas - prevTotals.ventasNetas) / prevTotals.ventasNetas) * 100 : 0;
-      comparison.resultado = prevTotals.resultadoMes ? ((currentTotals.resultadoMes - prevTotals.resultadoMes) / prevTotals.resultadoMes) * 100 : 0;
-    }
+    const prevYears = selectedYears.map(y => y - 1);
+    const prevYearData = data.filter(d => prevYears.includes(d.year));
+    
+    const prevTotals = prevYearData.reduce((acc, curr) => ({
+      ventasNetas: acc.ventasNetas + Number(curr.ventasNetas || 0),
+      costo: acc.costo + Number(curr.costo || 0),
+      gastos: acc.gastos + Number(curr.gastos || 0),
+      resultadoMes: acc.resultadoMes + Number(curr.resultadoMes || 0),
+    }), { ventasNetas: 0, costo: 0, gastos: 0, resultadoMes: 0 });
 
-    return { ...currentTotals, comparison, year: lastYear, currentYearData };
+    const calculateChange = (current: number, previous: number) => {
+      if (previous === 0) return 0;
+      return ((current - previous) / previous) * 100;
+    };
+
+    const comparison = {
+      ventas: calculateChange(currentTotals.ventasNetas, prevTotals.ventasNetas),
+      costo: calculateChange(currentTotals.costo, prevTotals.costo),
+      gastos: calculateChange(currentTotals.gastos, prevTotals.gastos),
+      resultado: calculateChange(currentTotals.resultadoMes, prevTotals.resultadoMes),
+    };
+
+    const yearLabel = selectedYears.length === 1 
+      ? selectedYears[0].toString() 
+      : `${Math.min(...selectedYears)}-${Math.max(...selectedYears)}`;
+
+    return { ...currentTotals, comparison, yearLabel, currentYearData };
   }, [data, selectedYears]);
 
   const currentYearData = totals.currentYearData;
@@ -271,35 +284,35 @@ export const Dashboard = () => {
         <div className="glass-card p-12 text-center flex flex-col items-center gap-4">
           <AlertCircle size={48} className="text-warning" />
           <div>
-            <h3 className="text-xl font-bold text-text">No hay datos para el año {totals.year}</h3>
+            <h3 className="text-xl font-bold text-text">No hay datos para el periodo {totals.yearLabel}</h3>
             <p className="text-text-light mt-2">Carga archivos PDF o ingresa datos manualmente en la sección de Configuración.</p>
           </div>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <StatCard 
-            title={`Ventas Netas (${totals.year})`} 
+            title={`Ventas Netas (${totals.yearLabel})`} 
             value={totals.ventasNetas} 
             change={totals.comparison.ventas.toFixed(1)} 
             isPositive={totals.comparison.ventas >= 0} 
             icon={TrendingUp} 
           />
           <StatCard 
-            title={`Costo de Ventas (${totals.year})`} 
+            title={`Costo de Ventas (${totals.yearLabel})`} 
             value={totals.costo} 
-            change={8.2} 
-            isPositive={false} 
+            change={totals.comparison.costo.toFixed(1)} 
+            isPositive={totals.comparison.costo <= 0} 
             icon={TrendingDown} 
           />
           <StatCard 
-            title={`Gastos Operativos (${totals.year})`} 
+            title={`Gastos Operativos (${totals.yearLabel})`} 
             value={totals.gastos} 
-            change={3.1} 
-            isPositive={false} 
+            change={totals.comparison.gastos.toFixed(1)} 
+            isPositive={totals.comparison.gastos <= 0} 
             icon={DollarSign} 
           />
           <StatCard 
-            title={`Resultado Neto (${totals.year})`} 
+            title={`Resultado Neto (${totals.yearLabel})`} 
             value={totals.resultadoMes} 
             change={totals.comparison.resultado.toFixed(1)} 
             isPositive={totals.comparison.resultado >= 0} 
