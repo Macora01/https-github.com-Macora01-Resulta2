@@ -31,6 +31,8 @@ import {
 import { financialData, MONTHS } from '../data/financialData';
 import { formatCurrency, cn } from '../lib/utils';
 
+import { AIInsights } from './AIInsights';
+
 const StatCard = ({ title, value, change, isPositive, icon: Icon }: any) => (
   <div className="glass-card p-6 flex flex-col gap-2">
     <div className="flex items-center justify-between">
@@ -319,6 +321,10 @@ export const Dashboard = () => {
             icon={TrendingUp} 
           />
         </div>
+      )}
+
+      {currentYearData.length > 0 && (
+        <AIInsights data={data} />
       )}
 
       {currentYearData.length > 0 && (

@@ -29,6 +29,8 @@ import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import autoTable from 'jspdf-autotable';
 
+import { AIForecast } from './AIForecast';
+
 export const Reports = () => {
   const [selectedYears, setSelectedYears] = React.useState<number[]>([2025]);
   const [selectedItems, setSelectedItems] = React.useState<string[]>(['ventasNetas', 'resultadoMes']);
@@ -403,6 +405,8 @@ export const Reports = () => {
             </div>
           </div>
         </div>
+
+        <AIForecast data={data} />
 
         {/* Data Table for PDF */}
         <div className="glass-card overflow-hidden">
