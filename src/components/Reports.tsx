@@ -1,6 +1,6 @@
 /**
  * Reports Component
- * Version: 01.00.006
+ * Version: 01.00.007
  */
 import React from 'react';
 import { 
@@ -281,14 +281,6 @@ export const Reports = () => {
           currentY = data.cursor.y + 15;
         }
       });
-
-      // 6. DEBUG: Last Page Marker
-      pdf.addPage();
-      pdf.setFontSize(20);
-      pdf.setTextColor(200, 0, 0);
-      pdf.text('YO SOY LA ÚLTIMA PÁGINA', pageWidth / 2, pageHeight / 2, { align: 'center' });
-      pdf.setFontSize(10);
-      pdf.text('Si ves esto, el reporte se generó hasta el final.', pageWidth / 2, pageHeight / 2 + 15, { align: 'center' });
 
       // Add page numbers to all pages
       const totalPages = pdf.getNumberOfPages();

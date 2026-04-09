@@ -1,6 +1,6 @@
 /**
  * AIForecast Component
- * Version: 01.00.006
+ * Version: 01.00.007
  */
 import React from 'react';
 import { TrendingUp, Calendar, Loader2, Sparkles, AlertCircle } from 'lucide-react';

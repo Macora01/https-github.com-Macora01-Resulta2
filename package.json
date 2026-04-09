@@ -1,7 +1,7 @@
 {
   "name": "facore-dashboard",
   "private": true,
-  "version": "01.00.006",
+  "version": "01.00.007",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
