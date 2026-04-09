@@ -1,6 +1,6 @@
 /**
  * Reports Component
- * Version: 01.00.001
+ * Version: 01.00.002
  */
 import React from 'react';
 import { 
@@ -157,23 +157,28 @@ export const Reports = () => {
       // Helper function to capture an element with robust settings
       const captureElement = async (id: string, width: string = '1200px') => {
         const el = document.getElementById(id);
-        if (!el) return null;
+        if (!el) {
+          console.warn(`Element with id ${id} not found`);
+          return null;
+        }
         
         try {
           return await html2canvas(el, {
             scale: 2,
             useCORS: true,
+            allowTaint: true,
             backgroundColor: '#ffffff',
-            logging: false,
-            imageTimeout: 0,
+            logging: true,
             onclone: (clonedDoc) => {
               const clonedEl = clonedDoc.getElementById(id);
               if (clonedEl) {
                 clonedEl.style.width = width;
                 clonedEl.style.maxWidth = width;
-                clonedEl.style.padding = '24px';
+                clonedEl.style.padding = '32px';
                 clonedEl.style.margin = '0';
                 clonedEl.style.background = 'white';
+                clonedEl.style.display = 'block';
+                clonedEl.style.visibility = 'visible';
                 
                 // Clean up styles for PDF
                 const allElements = clonedEl.querySelectorAll('*');
@@ -185,17 +190,23 @@ export const Reports = () => {
                     node.style.border = '1px solid #e5e7eb';
                     node.style.borderRadius = '12px';
                   }
+                  // Ensure text is visible
+                  if (node.classList.contains('text-white')) {
+                    // If it's a card with white text on dark bg, keep it or adjust
+                  }
                 });
 
                 // Force chart height for capture
                 const charts = clonedEl.querySelectorAll('.recharts-responsive-container');
                 charts.forEach((chart: any) => {
-                  chart.style.height = '400px';
+                  chart.style.height = '450px';
                   chart.style.width = '100%';
+                  chart.style.minHeight = '450px';
                   const svg = chart.querySelector('svg');
                   if (svg) {
                     svg.setAttribute('width', '100%');
-                    svg.setAttribute('height', '400');
+                    svg.setAttribute('height', '450');
+                    svg.style.height = '450px';
                   }
                 });
               }
@@ -207,34 +218,49 @@ export const Reports = () => {
         }
       };
 
-      // 2. Capture Visuals (Summary + Charts + AI)
-      setExportStatus('Capturando visualizaciones...');
-      const visualsCanvas = await captureElement('report-visuals', '1200px');
-      
-      if (visualsCanvas) {
-        const imgData = visualsCanvas.toDataURL('image/jpeg', 0.95);
-        const imgHeight = (visualsCanvas.height * contentWidth) / visualsCanvas.width;
-        
-        // If visuals are too tall, they might need scaling or multiple pages
-        if (currentY + imgHeight > pageHeight - 20) {
-          // Add visuals on a new page if they don't fit at all
-          if (currentY > 60) {
-            pdf.addPage();
-            currentY = 20;
-          }
-          
-          // Scale down if still too tall for a single page
-          const maxH = pageHeight - currentY - 20;
-          const finalH = Math.min(imgHeight, maxH);
-          pdf.addImage(imgData, 'JPEG', margin, currentY, contentWidth, finalH);
-          currentY += finalH + 10;
-        } else {
-          pdf.addImage(imgData, 'JPEG', margin, currentY, contentWidth, imgHeight);
-          currentY += imgHeight + 10;
-        }
+      // 2. Capture Summary Card
+      setExportStatus('Capturando resumen...');
+      const summaryCanvas = await captureElement('summary-card', '1000px');
+      if (summaryCanvas) {
+        const imgData = summaryCanvas.toDataURL('image/png');
+        const imgHeight = (summaryCanvas.height * contentWidth) / summaryCanvas.width;
+        pdf.addImage(imgData, 'PNG', margin, currentY, contentWidth, imgHeight);
+        currentY += imgHeight + 15;
       }
 
-      // 3. Data Table
+      // 3. Capture Chart
+      setExportStatus('Capturando gráficos...');
+      const chartCanvas = await captureElement('chart-container', '1000px');
+      if (chartCanvas) {
+        const imgData = chartCanvas.toDataURL('image/png');
+        const imgHeight = (chartCanvas.height * contentWidth) / chartCanvas.width;
+        
+        if (currentY + imgHeight > pageHeight - 20) {
+          pdf.addPage();
+          currentY = 20;
+        }
+        
+        pdf.addImage(imgData, 'PNG', margin, currentY, contentWidth, imgHeight);
+        currentY += imgHeight + 15;
+      }
+
+      // 4. Capture AI Forecast
+      setExportStatus('Capturando análisis de IA...');
+      const forecastCanvas = await captureElement('forecast-card', '1200px');
+      if (forecastCanvas) {
+        const imgData = forecastCanvas.toDataURL('image/png');
+        const imgHeight = (forecastCanvas.height * contentWidth) / forecastCanvas.width;
+        
+        if (currentY + imgHeight > pageHeight - 20) {
+          pdf.addPage();
+          currentY = 20;
+        }
+        
+        pdf.addImage(imgData, 'PNG', margin, currentY, contentWidth, imgHeight);
+        currentY += imgHeight + 15;
+      }
+
+      // 5. Data Table
       setExportStatus('Generando tablas...');
       if (currentY > pageHeight - 60) {
         pdf.addPage();
