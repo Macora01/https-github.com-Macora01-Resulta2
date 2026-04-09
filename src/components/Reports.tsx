@@ -1,6 +1,6 @@
 /**
  * Reports Component
- * Version: 01.00.002
+ * Version: 01.00.003
  */
 import React from 'react';
 import { 
@@ -154,6 +154,46 @@ export const Reports = () => {
       
       currentY = 50;
 
+      // DEBUG: First Page Marker
+      pdf.setFontSize(8);
+      pdf.setTextColor(150, 150, 150);
+      pdf.text('DEBUG: INICIO DE REPORTE (PÁGINA 1)', margin, 45);
+
+      // 2. Data Table (Moved to top as per user request)
+      setExportStatus('Generando tablas...');
+      pdf.setFontSize(16);
+      pdf.setTextColor(95, 46, 10);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('DETALLE DE DATOS MENSUALES', margin, currentY);
+      currentY += 10;
+
+      const tableHeaders = [['Mes', ...selectedYears.flatMap(year => 
+        selectedItems.map(itemId => `${items.find(i => i.id === itemId)?.label} (${year})`)
+      )]];
+
+      const tableRows = chartData.map(row => [
+        row.name,
+        ...selectedYears.flatMap(year => 
+          selectedItems.map(itemId => formatCurrency(row[`${itemId}_${year}`]))
+        )
+      ]);
+
+      autoTable(pdf, {
+        startY: currentY,
+        head: tableHeaders,
+        body: tableRows,
+        margin: { left: margin, right: margin },
+        styles: { fontSize: 8, cellPadding: 3, font: 'helvetica' },
+        headStyles: { fillColor: [95, 46, 10], textColor: [255, 255, 255], fontStyle: 'bold' },
+        alternateRowStyles: { fillColor: [248, 245, 240] },
+        columnStyles: {
+          0: { fontStyle: 'bold' }
+        },
+        didDrawPage: (data) => {
+          currentY = data.cursor.y + 15;
+        }
+      });
+
       // Helper function to capture an element with robust settings
       const captureElement = async (id: string, width: string = '1200px') => {
         const el = document.getElementById(id);
@@ -190,10 +230,6 @@ export const Reports = () => {
                     node.style.border = '1px solid #e5e7eb';
                     node.style.borderRadius = '12px';
                   }
-                  // Ensure text is visible
-                  if (node.classList.contains('text-white')) {
-                    // If it's a card with white text on dark bg, keep it or adjust
-                  }
                 });
 
                 // Force chart height for capture
@@ -218,17 +254,21 @@ export const Reports = () => {
         }
       };
 
-      // 2. Capture Summary Card
+      // 3. Capture Summary Card
       setExportStatus('Capturando resumen...');
       const summaryCanvas = await captureElement('summary-card', '1000px');
       if (summaryCanvas) {
+        if (currentY + 60 > pageHeight - 20) {
+          pdf.addPage();
+          currentY = 20;
+        }
         const imgData = summaryCanvas.toDataURL('image/png');
         const imgHeight = (summaryCanvas.height * contentWidth) / summaryCanvas.width;
         pdf.addImage(imgData, 'PNG', margin, currentY, contentWidth, imgHeight);
         currentY += imgHeight + 15;
       }
 
-      // 3. Capture Chart
+      // 4. Capture Chart
       setExportStatus('Capturando gráficos...');
       const chartCanvas = await captureElement('chart-container', '1000px');
       if (chartCanvas) {
@@ -244,7 +284,7 @@ export const Reports = () => {
         currentY += imgHeight + 15;
       }
 
-      // 4. Capture AI Forecast
+      // 5. Capture AI Forecast
       setExportStatus('Capturando análisis de IA...');
       const forecastCanvas = await captureElement('forecast-card', '1200px');
       if (forecastCanvas) {
@@ -260,55 +300,27 @@ export const Reports = () => {
         currentY += imgHeight + 15;
       }
 
-      // 5. Data Table
-      setExportStatus('Generando tablas...');
-      if (currentY > pageHeight - 60) {
-        pdf.addPage();
-        currentY = 20;
-      } else {
-        currentY += 10;
+      // 6. DEBUG: Last Page Marker
+      pdf.addPage();
+      pdf.setFontSize(20);
+      pdf.setTextColor(200, 0, 0);
+      pdf.text('YO SOY LA ÚLTIMA PÁGINA', pageWidth / 2, pageHeight / 2, { align: 'center' });
+      pdf.setFontSize(10);
+      pdf.text('Si ves esto, el reporte se generó hasta el final.', pageWidth / 2, pageHeight / 2 + 15, { align: 'center' });
+
+      // Add page numbers to all pages
+      const totalPages = pdf.getNumberOfPages();
+      for (let i = 1; i <= totalPages; i++) {
+        pdf.setPage(i);
+        pdf.setFontSize(9);
+        pdf.setTextColor(150, 150, 150);
+        pdf.text(
+          `Facore Dashboard - Página ${i} de ${totalPages}`, 
+          pageWidth / 2, 
+          pageHeight - 10, 
+          { align: 'center' }
+        );
       }
-
-      pdf.setFontSize(16);
-      pdf.setTextColor(95, 46, 10);
-      pdf.setFont('helvetica', 'bold');
-      pdf.text('DETALLE DE DATOS MENSUALES', margin, currentY);
-      currentY += 8;
-
-      const tableHeaders = [['Mes', ...selectedYears.flatMap(year => 
-        selectedItems.map(itemId => `${items.find(i => i.id === itemId)?.label} (${year})`)
-      )]];
-
-      const tableRows = chartData.map(row => [
-        row.name,
-        ...selectedYears.flatMap(year => 
-          selectedItems.map(itemId => formatCurrency(row[`${itemId}_${year}`]))
-        )
-      ]);
-
-      autoTable(pdf, {
-        startY: currentY,
-        head: tableHeaders,
-        body: tableRows,
-        margin: { left: margin, right: margin },
-        styles: { fontSize: 8, cellPadding: 3, font: 'helvetica' },
-        headStyles: { fillColor: [95, 46, 10], textColor: [255, 255, 255], fontStyle: 'bold' },
-        alternateRowStyles: { fillColor: [248, 245, 240] },
-        columnStyles: {
-          0: { fontStyle: 'bold' }
-        },
-        didDrawPage: (data) => {
-          const pageCount = pdf.getNumberOfPages();
-          pdf.setFontSize(9);
-          pdf.setTextColor(150, 150, 150);
-          pdf.text(
-            `Facore Dashboard - Página ${pageCount}`, 
-            pageWidth / 2, 
-            pdf.internal.pageSize.getHeight() - 10, 
-            { align: 'center' }
-          );
-        }
-      });
 
       setExportStatus('Finalizando...');
       pdf.save(`Reporte_Facore_${selectedYears.join('_')}.pdf`);
