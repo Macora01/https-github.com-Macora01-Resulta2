@@ -1,6 +1,6 @@
 /**
  * Reports Component
- * Version: 01.00.004
+ * Version: 01.00.005
  */
 import React from 'react';
 import { 
@@ -154,22 +154,14 @@ export const Reports = () => {
       
       currentY = 50;
 
-      // DEBUG: First Page Marker
-      pdf.setFontSize(10);
-      pdf.setTextColor(150, 150, 150);
-      pdf.text('YO SOY LA PRIMERA PÁGINA (VISUALES)', margin, 45);
-
       // Helper function to capture an element with robust settings
-      const captureElement = async (id: string, width: string = '1200px') => {
+      const captureElement = async (id: string) => {
         const el = document.getElementById(id);
-        if (!el) {
-          console.warn(`Element with id ${id} not found`);
-          return null;
-        }
+        if (!el) return { error: `Elemento ID "${id}" no encontrado en el DOM` };
         
         try {
-          return await html2canvas(el, {
-            scale: 1.5, // Reduced scale for better memory management
+          const canvas = await html2canvas(el, {
+            scale: 1.5,
             useCORS: true,
             allowTaint: true,
             backgroundColor: '#ffffff',
@@ -177,103 +169,91 @@ export const Reports = () => {
             onclone: (clonedDoc) => {
               const clonedEl = clonedDoc.getElementById(id);
               if (clonedEl) {
-                clonedEl.style.width = width;
-                clonedEl.style.maxWidth = width;
-                clonedEl.style.padding = '32px';
-                clonedEl.style.margin = '0';
+                clonedEl.style.width = '1000px';
+                clonedEl.style.padding = '20px';
                 clonedEl.style.background = 'white';
+                
+                // Force visibility
                 clonedEl.style.display = 'block';
                 clonedEl.style.visibility = 'visible';
-                
-                // Clean up styles for PDF
-                const allElements = clonedEl.querySelectorAll('*');
-                allElements.forEach((node: any) => {
-                  if (node.classList.contains('glass-card')) {
-                    node.style.backdropFilter = 'none';
-                    node.style.background = 'white';
-                    node.style.boxShadow = 'none';
-                    node.style.border = '1px solid #e5e7eb';
-                    node.style.borderRadius = '12px';
-                  }
-                });
+                clonedEl.style.opacity = '1';
 
-                // Force chart height for capture
+                // Fix charts
                 const charts = clonedEl.querySelectorAll('.recharts-responsive-container');
                 charts.forEach((chart: any) => {
                   chart.style.height = '400px';
-                  chart.style.width = '100%';
-                  chart.style.minHeight = '400px';
+                  chart.style.width = '1000px';
                   const svg = chart.querySelector('svg');
                   if (svg) {
-                    svg.setAttribute('width', '100%');
+                    svg.setAttribute('width', '1000');
                     svg.setAttribute('height', '400');
-                    svg.style.height = '400px';
                   }
                 });
               }
             }
           });
+          return { canvas };
         } catch (err) {
-          console.error(`Error capturing ${id}:`, err);
-          return null;
+          return { error: `Error html2canvas (${id}): ${err instanceof Error ? err.message : String(err)}` };
         }
       };
 
       // 2. Capture Summary Card
       setExportStatus('Capturando resumen...');
-      const summaryCanvas = await captureElement('summary-card', '1000px');
-      if (summaryCanvas) {
-        const imgData = summaryCanvas.toDataURL('image/jpeg', 0.9);
-        const imgHeight = (summaryCanvas.height * contentWidth) / summaryCanvas.width;
-        pdf.addImage(imgData, 'JPEG', margin, currentY, contentWidth, imgHeight);
+      const summaryResult = await captureElement('summary-card');
+      if (summaryResult.canvas) {
+        const imgData = summaryResult.canvas.toDataURL('image/png');
+        const imgHeight = (summaryResult.canvas.height * contentWidth) / summaryResult.canvas.width;
+        pdf.addImage(imgData, 'PNG', margin, currentY, contentWidth, imgHeight);
         currentY += imgHeight + 15;
       } else {
         pdf.setTextColor(200, 0, 0);
-        pdf.text('ERROR: No se pudo capturar el Resumen', margin, currentY);
+        pdf.setFontSize(10);
+        pdf.text(`ERROR RESUMEN: ${summaryResult.error}`, margin, currentY);
         currentY += 10;
       }
 
       // 3. Capture Chart
       setExportStatus('Capturando gráficos...');
-      const chartCanvas = await captureElement('chart-container', '1000px');
-      if (chartCanvas) {
-        const imgData = chartCanvas.toDataURL('image/jpeg', 0.9);
-        const imgHeight = (chartCanvas.height * contentWidth) / chartCanvas.width;
+      const chartResult = await captureElement('chart-container');
+      if (chartResult.canvas) {
+        const imgData = chartResult.canvas.toDataURL('image/png');
+        const imgHeight = (chartResult.canvas.height * contentWidth) / chartResult.canvas.width;
         
         if (currentY + imgHeight > pageHeight - 20) {
           pdf.addPage();
           currentY = 20;
         }
         
-        pdf.addImage(imgData, 'JPEG', margin, currentY, contentWidth, imgHeight);
+        pdf.addImage(imgData, 'PNG', margin, currentY, contentWidth, imgHeight);
         currentY += imgHeight + 15;
       } else {
         pdf.setTextColor(200, 0, 0);
-        pdf.text('ERROR: No se pudo capturar el Gráfico', margin, currentY);
+        pdf.text(`ERROR GRÁFICO: ${chartResult.error}`, margin, currentY);
         currentY += 10;
       }
 
       // 4. Capture AI Forecast
       setExportStatus('Capturando análisis de IA...');
-      const forecastCanvas = await captureElement('forecast-card', '1200px');
-      if (forecastCanvas) {
-        const imgData = forecastCanvas.toDataURL('image/jpeg', 0.9);
-        const imgHeight = (forecastCanvas.height * contentWidth) / forecastCanvas.width;
+      const forecastResult = await captureElement('forecast-card');
+      if (forecastResult.canvas) {
+        const imgData = forecastResult.canvas.toDataURL('image/png');
+        const imgHeight = (forecastResult.canvas.height * contentWidth) / forecastResult.canvas.width;
         
         if (currentY + imgHeight > pageHeight - 20) {
           pdf.addPage();
           currentY = 20;
         }
         
-        pdf.addImage(imgData, 'JPEG', margin, currentY, contentWidth, imgHeight);
+        pdf.addImage(imgData, 'PNG', margin, currentY, contentWidth, imgHeight);
         currentY += imgHeight + 15;
       } else {
         pdf.setTextColor(200, 0, 0);
-        pdf.text('ERROR: No se pudo capturar el Análisis de IA', margin, currentY);
+        pdf.text(`ERROR IA: ${forecastResult.error}`, margin, currentY);
         currentY += 10;
       }
 
-      // 5. Data Table (Moved to the end)
+      // 5. Data Table
       setExportStatus('Generando tablas...');
       if (currentY > pageHeight - 60) {
         pdf.addPage();
