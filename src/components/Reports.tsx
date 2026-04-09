@@ -1,6 +1,6 @@
 /**
  * Reports Component
- * Version: 01.00.007
+ * Version: 01.00.008
  */
 import React from 'react';
 import { 
@@ -185,42 +185,41 @@ export const Reports = () => {
         }
       };
 
-      // 2. Capture Summary Card
-      setExportStatus('Capturando resumen...');
+      // 2. Capture Summary Card & Chart (Side by Side to save space and shrink them)
+      setExportStatus('Capturando resumen y gráficos...');
       const summaryResult = await captureElement('summary-card');
+      const chartResult = await captureElement('chart-container');
+      
+      const halfWidth = (contentWidth - 10) / 2;
+      let maxHeightInRow = 0;
+
+      // Add Summary
       if (summaryResult.canvas) {
         const imgData = summaryResult.canvas.toDataURL('image/png');
-        const imgHeight = (summaryResult.canvas.height * contentWidth) / summaryResult.canvas.width;
-        pdf.addImage(imgData, 'PNG', margin, currentY, contentWidth, imgHeight);
-        currentY += imgHeight + 15;
+        const imgHeight = (summaryResult.canvas.height * halfWidth) / summaryResult.canvas.width;
+        pdf.addImage(imgData, 'PNG', margin, currentY, halfWidth, imgHeight);
+        maxHeightInRow = Math.max(maxHeightInRow, imgHeight);
       } else {
         pdf.setTextColor(200, 0, 0);
-        pdf.setFontSize(10);
-        pdf.text(`ERROR RESUMEN: ${summaryResult.error}`, margin, currentY);
-        currentY += 10;
+        pdf.setFontSize(8);
+        pdf.text(`ERR RESUMEN: ${summaryResult.error}`, margin, currentY + 5);
       }
 
-      // 3. Capture Chart
-      setExportStatus('Capturando gráficos...');
-      const chartResult = await captureElement('chart-container');
+      // Add Chart next to Summary
       if (chartResult.canvas) {
         const imgData = chartResult.canvas.toDataURL('image/png');
-        const imgHeight = (chartResult.canvas.height * contentWidth) / chartResult.canvas.width;
-        
-        if (currentY + imgHeight > pageHeight - 20) {
-          pdf.addPage();
-          currentY = 20;
-        }
-        
-        pdf.addImage(imgData, 'PNG', margin, currentY, contentWidth, imgHeight);
-        currentY += imgHeight + 15;
+        const imgHeight = (chartResult.canvas.height * halfWidth) / chartResult.canvas.width;
+        pdf.addImage(imgData, 'PNG', margin + halfWidth + 10, currentY, halfWidth, imgHeight);
+        maxHeightInRow = Math.max(maxHeightInRow, imgHeight);
       } else {
         pdf.setTextColor(200, 0, 0);
-        pdf.text(`ERROR GRÁFICO: ${chartResult.error}`, margin, currentY);
-        currentY += 10;
+        pdf.setFontSize(8);
+        pdf.text(`ERR GRÁFICO: ${chartResult.error}`, margin + halfWidth + 10, currentY + 5);
       }
 
-      // 4. Capture AI Forecast
+      currentY += maxHeightInRow + 20;
+
+      // 4. Capture AI Forecast (Enlarged / Full Width)
       setExportStatus('Capturando análisis de IA...');
       const forecastResult = await captureElement('forecast-card');
       if (forecastResult.canvas) {
