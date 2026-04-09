@@ -1,6 +1,6 @@
 /**
  * Reports Component
- * Version: 01.00.003
+ * Version: 01.00.004
  */
 import React from 'react';
 import { 
@@ -155,44 +155,9 @@ export const Reports = () => {
       currentY = 50;
 
       // DEBUG: First Page Marker
-      pdf.setFontSize(8);
+      pdf.setFontSize(10);
       pdf.setTextColor(150, 150, 150);
-      pdf.text('DEBUG: INICIO DE REPORTE (PÁGINA 1)', margin, 45);
-
-      // 2. Data Table (Moved to top as per user request)
-      setExportStatus('Generando tablas...');
-      pdf.setFontSize(16);
-      pdf.setTextColor(95, 46, 10);
-      pdf.setFont('helvetica', 'bold');
-      pdf.text('DETALLE DE DATOS MENSUALES', margin, currentY);
-      currentY += 10;
-
-      const tableHeaders = [['Mes', ...selectedYears.flatMap(year => 
-        selectedItems.map(itemId => `${items.find(i => i.id === itemId)?.label} (${year})`)
-      )]];
-
-      const tableRows = chartData.map(row => [
-        row.name,
-        ...selectedYears.flatMap(year => 
-          selectedItems.map(itemId => formatCurrency(row[`${itemId}_${year}`]))
-        )
-      ]);
-
-      autoTable(pdf, {
-        startY: currentY,
-        head: tableHeaders,
-        body: tableRows,
-        margin: { left: margin, right: margin },
-        styles: { fontSize: 8, cellPadding: 3, font: 'helvetica' },
-        headStyles: { fillColor: [95, 46, 10], textColor: [255, 255, 255], fontStyle: 'bold' },
-        alternateRowStyles: { fillColor: [248, 245, 240] },
-        columnStyles: {
-          0: { fontStyle: 'bold' }
-        },
-        didDrawPage: (data) => {
-          currentY = data.cursor.y + 15;
-        }
-      });
+      pdf.text('YO SOY LA PRIMERA PÁGINA (VISUALES)', margin, 45);
 
       // Helper function to capture an element with robust settings
       const captureElement = async (id: string, width: string = '1200px') => {
@@ -204,7 +169,7 @@ export const Reports = () => {
         
         try {
           return await html2canvas(el, {
-            scale: 2,
+            scale: 1.5, // Reduced scale for better memory management
             useCORS: true,
             allowTaint: true,
             backgroundColor: '#ffffff',
@@ -235,14 +200,14 @@ export const Reports = () => {
                 // Force chart height for capture
                 const charts = clonedEl.querySelectorAll('.recharts-responsive-container');
                 charts.forEach((chart: any) => {
-                  chart.style.height = '450px';
+                  chart.style.height = '400px';
                   chart.style.width = '100%';
-                  chart.style.minHeight = '450px';
+                  chart.style.minHeight = '400px';
                   const svg = chart.querySelector('svg');
                   if (svg) {
                     svg.setAttribute('width', '100%');
-                    svg.setAttribute('height', '450');
-                    svg.style.height = '450px';
+                    svg.setAttribute('height', '400');
+                    svg.style.height = '400px';
                   }
                 });
               }
@@ -254,25 +219,25 @@ export const Reports = () => {
         }
       };
 
-      // 3. Capture Summary Card
+      // 2. Capture Summary Card
       setExportStatus('Capturando resumen...');
       const summaryCanvas = await captureElement('summary-card', '1000px');
       if (summaryCanvas) {
-        if (currentY + 60 > pageHeight - 20) {
-          pdf.addPage();
-          currentY = 20;
-        }
-        const imgData = summaryCanvas.toDataURL('image/png');
+        const imgData = summaryCanvas.toDataURL('image/jpeg', 0.9);
         const imgHeight = (summaryCanvas.height * contentWidth) / summaryCanvas.width;
-        pdf.addImage(imgData, 'PNG', margin, currentY, contentWidth, imgHeight);
+        pdf.addImage(imgData, 'JPEG', margin, currentY, contentWidth, imgHeight);
         currentY += imgHeight + 15;
+      } else {
+        pdf.setTextColor(200, 0, 0);
+        pdf.text('ERROR: No se pudo capturar el Resumen', margin, currentY);
+        currentY += 10;
       }
 
-      // 4. Capture Chart
+      // 3. Capture Chart
       setExportStatus('Capturando gráficos...');
       const chartCanvas = await captureElement('chart-container', '1000px');
       if (chartCanvas) {
-        const imgData = chartCanvas.toDataURL('image/png');
+        const imgData = chartCanvas.toDataURL('image/jpeg', 0.9);
         const imgHeight = (chartCanvas.height * contentWidth) / chartCanvas.width;
         
         if (currentY + imgHeight > pageHeight - 20) {
@@ -280,15 +245,19 @@ export const Reports = () => {
           currentY = 20;
         }
         
-        pdf.addImage(imgData, 'PNG', margin, currentY, contentWidth, imgHeight);
+        pdf.addImage(imgData, 'JPEG', margin, currentY, contentWidth, imgHeight);
         currentY += imgHeight + 15;
+      } else {
+        pdf.setTextColor(200, 0, 0);
+        pdf.text('ERROR: No se pudo capturar el Gráfico', margin, currentY);
+        currentY += 10;
       }
 
-      // 5. Capture AI Forecast
+      // 4. Capture AI Forecast
       setExportStatus('Capturando análisis de IA...');
       const forecastCanvas = await captureElement('forecast-card', '1200px');
       if (forecastCanvas) {
-        const imgData = forecastCanvas.toDataURL('image/png');
+        const imgData = forecastCanvas.toDataURL('image/jpeg', 0.9);
         const imgHeight = (forecastCanvas.height * contentWidth) / forecastCanvas.width;
         
         if (currentY + imgHeight > pageHeight - 20) {
@@ -296,9 +265,55 @@ export const Reports = () => {
           currentY = 20;
         }
         
-        pdf.addImage(imgData, 'PNG', margin, currentY, contentWidth, imgHeight);
+        pdf.addImage(imgData, 'JPEG', margin, currentY, contentWidth, imgHeight);
         currentY += imgHeight + 15;
+      } else {
+        pdf.setTextColor(200, 0, 0);
+        pdf.text('ERROR: No se pudo capturar el Análisis de IA', margin, currentY);
+        currentY += 10;
       }
+
+      // 5. Data Table (Moved to the end)
+      setExportStatus('Generando tablas...');
+      if (currentY > pageHeight - 60) {
+        pdf.addPage();
+        currentY = 20;
+      } else {
+        currentY += 10;
+      }
+
+      pdf.setFontSize(16);
+      pdf.setTextColor(95, 46, 10);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('DETALLE DE DATOS MENSUALES', margin, currentY);
+      currentY += 8;
+
+      const tableHeaders = [['Mes', ...selectedYears.flatMap(year => 
+        selectedItems.map(itemId => `${items.find(i => i.id === itemId)?.label} (${year})`)
+      )]];
+
+      const tableRows = chartData.map(row => [
+        row.name,
+        ...selectedYears.flatMap(year => 
+          selectedItems.map(itemId => formatCurrency(row[`${itemId}_${year}`]))
+        )
+      ]);
+
+      autoTable(pdf, {
+        startY: currentY,
+        head: tableHeaders,
+        body: tableRows,
+        margin: { left: margin, right: margin },
+        styles: { fontSize: 8, cellPadding: 3, font: 'helvetica' },
+        headStyles: { fillColor: [95, 46, 10], textColor: [255, 255, 255], fontStyle: 'bold' },
+        alternateRowStyles: { fillColor: [248, 245, 240] },
+        columnStyles: {
+          0: { fontStyle: 'bold' }
+        },
+        didDrawPage: (data) => {
+          currentY = data.cursor.y + 15;
+        }
+      });
 
       // 6. DEBUG: Last Page Marker
       pdf.addPage();
