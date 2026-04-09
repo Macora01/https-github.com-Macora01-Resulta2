@@ -1,6 +1,6 @@
 /**
  * Auth Component
- * Version: 01.00.005
+ * Version: 01.00.006
  */
 import React from 'react';
 import { Lock, Mail, ArrowRight, BarChart3, Play } from 'lucide-react';

@@ -1,6 +1,6 @@
 /**
  * Reports Component
- * Version: 01.00.005
+ * Version: 01.00.006
  */
 import React from 'react';
 import { 
@@ -30,7 +30,7 @@ import {
 import { formatCurrency, cn } from '../lib/utils';
 import { financialData, MONTHS } from '../data/financialData';
 import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
+import { domToCanvas } from 'modern-screenshot';
 import autoTable from 'jspdf-autotable';
 
 import { AIForecast } from './AIForecast';
@@ -160,41 +160,28 @@ export const Reports = () => {
         if (!el) return { error: `Elemento ID "${id}" no encontrado en el DOM` };
         
         try {
-          const canvas = await html2canvas(el, {
-            scale: 1.5,
-            useCORS: true,
-            allowTaint: true,
+          // modern-screenshot is much better at handling modern CSS (oklch, oklab, etc)
+          const canvas = await domToCanvas(el, {
+            scale: 2,
             backgroundColor: '#ffffff',
-            logging: true,
-            onclone: (clonedDoc) => {
-              const clonedEl = clonedDoc.getElementById(id);
-              if (clonedEl) {
-                clonedEl.style.width = '1000px';
-                clonedEl.style.padding = '20px';
-                clonedEl.style.background = 'white';
-                
-                // Force visibility
-                clonedEl.style.display = 'block';
-                clonedEl.style.visibility = 'visible';
-                clonedEl.style.opacity = '1';
-
-                // Fix charts
-                const charts = clonedEl.querySelectorAll('.recharts-responsive-container');
-                charts.forEach((chart: any) => {
-                  chart.style.height = '400px';
-                  chart.style.width = '1000px';
-                  const svg = chart.querySelector('svg');
+            onCloneNode: (node) => {
+              if (node instanceof HTMLElement) {
+                // Ensure charts have fixed dimensions during capture
+                if (node.classList.contains('recharts-responsive-container')) {
+                  node.style.height = '400px';
+                  node.style.width = '1000px';
+                  const svg = node.querySelector('svg');
                   if (svg) {
                     svg.setAttribute('width', '1000');
                     svg.setAttribute('height', '400');
                   }
-                });
+                }
               }
             }
           });
           return { canvas };
         } catch (err) {
-          return { error: `Error html2canvas (${id}): ${err instanceof Error ? err.message : String(err)}` };
+          return { error: `Error modern-screenshot (${id}): ${err instanceof Error ? err.message : String(err)}` };
         }
       };
 
